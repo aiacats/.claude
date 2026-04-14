@@ -1,5 +1,0 @@
-- [Architecture Decision](project_architecture.md) — Avalonia+OpenTK, 半透明プロジェクション方式, MVVM, .NET 8
-- [Design Reference Image](design_reference_image.md) — 参照画像(Unity Editor風UI)の詳細テキスト説明
-- [Kill before build](feedback_kill_before_build.md) — ビルド/テスト前に既存プロセスを必ずkill
-- [MCP registration](feedback_mcp_registration.md) — `claude mcp add -s user` を使う。`~/.claude/.mcp.json` は無効
-- [win-gui MCP](reference_win_gui_mcp.md) — Windows GUI自動化MCP (`mcp__win-gui__*`、再起動後に利用可)

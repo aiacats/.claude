@@ -31,10 +31,8 @@ settings.local.json
 # ═══ Plugins (machine-local install paths) ═══
 /plugins/
 
-# ═══ Per-project: keep only memory/, drop session data ═══
-/projects/*/*
-!/projects/*/memory/
-!/projects/*/memory/**
+# ═══ Projects (path-encoded, not portable) ═══
+/projects/
 
 # ═══ Misc ═══
 *.log
