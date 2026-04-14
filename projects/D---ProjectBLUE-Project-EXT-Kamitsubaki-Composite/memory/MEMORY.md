@@ -1,0 +1,5 @@
+- [Screenshot tool](feedback_screenshot.md) — Win側でフルスクリーンショットを撮る手段があるらしい。要確認。
+- [メモリの積極的構築](feedback_proactive_memory.md) — ユーザー判断で積極的にメモリを蓄積する方針
+- [プロジェクト概要](project_overview.md) — Unity 6 URP、カミツバキスタジオ向けリアルタイムライブ＋コンポジット環境
+- [MultiPassRenderer技術背景](project_multipass_renderer.md) — EXRオフラインレンダラーの設計判断と注意点
+- [次回対応予定タスク](project_next_tasks.md) — OfflineRenderRecorderのTimeline統合リファクタ

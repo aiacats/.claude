@@ -1,0 +1,40 @@
+# ═══ Secrets (API keys, tokens) ═══
+.credentials.json
+.notion-config
+notion-config
+mcp-needs-auth-cache.json
+
+# ═══ Machine-specific settings ═══
+# (re-register MCP servers manually per machine with `claude mcp add`)
+settings.json
+settings.local.json
+
+# ═══ Runtime / cache / session data ═══
+/cache/
+/backups/
+/debug/
+/downloads/
+/file-history/
+/history.jsonl
+/ide/
+/image-cache/
+/paste-cache/
+/plans/
+/sessions/
+/shell-snapshots/
+/stats-cache.json
+/statsig/
+/tasks/
+/telemetry/
+/todos/
+
+# ═══ Plugins (machine-local install paths) ═══
+/plugins/
+
+# ═══ Per-project: keep only memory/, drop session data ═══
+/projects/*/*
+!/projects/*/memory/
+!/projects/*/memory/**
+
+# ═══ Misc ═══
+*.log

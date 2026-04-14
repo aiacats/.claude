@@ -1,0 +1,5 @@
+- [WinUITestKit](memories/winuitestkit_tool.md) — Win32 UI自動テストライブラリ。実装後のUI検証に積極使用
+- [ローカルNuGetフィード](memories/nuget_local_feed.md) — D:\_Personal\NuGetLocal\ に自作パッケージを配置
+- [UIテスト必須](memories/ui_test_mandatory.md) — GUI実装完了時にUIテスト必須実行+新機能ごとにテスト追加。正常性チェックはClaude側の責任
+- [コード品質基準](memories/code_quality_standards.md) — Utility化・共通化・安全なAPI使用を最初から行う。リファクタリングで直すべきことは最初からやる
+- [作業フロー](memories/workflow_sequential.md) — 要望は順次処理、確認不要でそのまま着手。軌道修正のみ即時反映
