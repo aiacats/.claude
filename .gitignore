@@ -5,8 +5,8 @@ notion-config
 mcp-needs-auth-cache.json
 
 # ═══ Machine-specific settings ═══
-# (re-register MCP servers manually per machine with `claude mcp add`)
-settings.json
+# settings.json はGit共有対象（permissions 等、全PC共通の設定）。
+# MCPサーバー登録は各PCで `claude mcp add` を実行する（settings.json には書かない）。
 settings.local.json
 
 # ═══ Runtime / cache / session data ═══
