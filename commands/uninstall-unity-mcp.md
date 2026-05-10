@@ -20,7 +20,8 @@ CWD が Unity プロジェクトであること（`Packages/manifest.json` 存�
   1. Packages/com.aiacats.unity-mcp/  （embed されたパッケージ一式 — 削除）
   2. Packages/manifest.json  から com.aiacats.unity-mcp エントリを削除
   3. .mcp.json  （claude-code-mcp-unity サーバー定義のみ削除、他サーバーがあればファイル残置）
-  4. .gitignore  に setup 時に追加した /.mcp.json 行があれば削除（任意）
+  4. .claude/settings.json と .claude/settings.local.json の enabledMcpjsonServers から claude-code-mcp-unity を除去
+  5. .gitignore  に setup 時に追加した /.mcp.json 行があれば削除（任意）
 
 実行してよろしいですか？ [yes / no]
 ```
@@ -37,6 +38,15 @@ CWD が Unity プロジェクトであること（`Packages/manifest.json` 存�
 
 - 削除後 `mcpServers` が空オブジェクトになる場合は **`.mcp.json` 自体を削除**
 - 他のサーバー定義が残る場合は **ファイルを書き戻して保持**
+
+## Step 2b: `enabledMcpjsonServers` から登録解除
+
+`.claude/settings.json` と `.claude/settings.local.json` の双方について、存在すれば JSON として読み込み、トップレベルの `enabledMcpjsonServers` 配列から `claude-code-mcp-unity` を除去：
+
+- 配列に含まれていなければ何もしない
+- 除去後 `enabledMcpjsonServers` が空配列になる場合はキー自体を削除
+- ファイルに他のキー（`permissions` など）が残るなら書き戻して保持
+- ファイル内のキーが `enabledMcpjsonServers` だけになり、かつ空削除でファイル本体が `{}` になる場合は **ファイルを削除しない**（他用途で使われ得るため空オブジェクトのまま残す）
 
 ## Step 3: manifest.json から `com.aiacats.unity-mcp` を削除
 
@@ -66,6 +76,7 @@ CWD が Unity プロジェクトであること（`Packages/manifest.json` 存�
 |---|---|
 | .mcp.json から claude-code-mcp-unity 削除 | ✅ / (なし) |
 | .mcp.json 自体の削除 | ✅ / 他サーバー残存のため保持 |
+| enabledMcpjsonServers 登録解除 | ✅ settings.json / ✅ settings.local.json / (なし) |
 | manifest.json からエントリ削除 | ✅ / (なし) |
 | Packages/com.aiacats.unity-mcp/ 削除 | ✅ / (なし) |
 | .gitignore クリーンアップ | ✅ / (なし) |

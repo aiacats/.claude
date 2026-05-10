@@ -76,6 +76,25 @@ allowed-tools: Bash, Read, Edit, Write, Glob, Grep, mcp__win-gui__find_window, m
 
 `Server~/node_modules` は Unity 標準の `*~` パターンで既に ignore されるため対象外。
 
+## Step 5c: `enabledMcpjsonServers` への自動登録（承認ダイアログ抑止）
+
+`.mcp.json`（プロジェクトスコープ MCP）は、Claude Code 起動時に承認ダイアログが必要だが、`hasTrustDialogAccepted: true` 済みの既存プロジェクトや、セッション中に `.mcp.json` を新規作成したケースではダイアログが出ない場合がある。次回起動時から確実に有効化するため、`$SCOPE` に応じて以下のいずれかへ `enabledMcpjsonServers` を追記する。
+
+- `$SCOPE` = `team-shared` → `.claude/settings.json`（コミット対象）
+- `$SCOPE` = `personal`    → `.claude/settings.local.json`（gitignore 済み）
+
+書き込み手順：
+
+1. 対象ファイルが無ければ次の最小内容で新規作成：
+   ```json
+   { "enabledMcpjsonServers": ["claude-code-mcp-unity"] }
+   ```
+2. 既存ファイルがあれば JSON として読み込み、トップレベルの `enabledMcpjsonServers` を取得：
+   - キーが無ければ追加
+   - 配列内に `claude-code-mcp-unity` が無ければ push（重複追加しない）
+   - 既に含まれていればスキップ
+3. その他の既存キー（`permissions` 等）は保持してマージ書き戻し。
+
 ## Step 6: Unity Editor の起動 or フォーカス
 
 `mcp__win-gui__find_window` で CWD basename を含むウィンドウを探す。
@@ -99,11 +118,12 @@ allowed-tools: Bash, Read, Edit, Write, Glob, Grep, mcp__win-gui__find_window, m
 | npm install | ✅ auto / ✅ manual / (skip) |
 | .mcp.json 作成 | ✅ / (skip) |
 | .gitignore 反映 | ✅ / N/A |
+| enabledMcpjsonServers 登録 | ✅ team-shared / ✅ personal / (skip) |
 | Unity 再インポート | ✅ Ctrl+R / 手動依頼 |
 | HTTP サーバー応答 | ✅ HTTP 200 / ❌ 未応答 |
 ```
 
-最後に: **「Claude Code を `/exit` → 再起動してください。`.mcp.json` の承認ダイアログが出たら許可。再起動後 `/mcp` で `claude-code-mcp-unity: connected` を確認してください」**
+最後に: **「Claude Code を `/exit` → 再起動してください。`enabledMcpjsonServers` を自動登録済みなので承認ダイアログは出ず、即座にツールが利用可能になります。再起動後 `/mcp` で `claude-code-mcp-unity: connected` を確認してください」**
 
 アンインストールは `/uninstall-unity-mcp` で対称的に行えることも案内。
 

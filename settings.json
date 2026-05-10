@@ -10,12 +10,15 @@
       "Grep",
       "WebFetch",
       "WebSearch",
-      "NotebookEdit"
-    ],
-    "ask": [
-      "Bash(git push:*)",
-      "Bash(rm -rf:*)",
-      "Bash(rm -r:*)"
+      "NotebookEdit",
+      "mcp__claude-code-mcp-unity__get_compilation_errors",
+      "mcp__claude-code-mcp-unity__get_console_logs",
+      "mcp__claude-code-mcp-unity__check_compilation_status",
+      "mcp__claude-code-mcp-unity__screenshot",
+      "mcp__win-gui__screenshot",
+      "mcp__win-gui__find_window",
+      "mcp__win-gui__wait_for_window",
+      "mcp__win-gui__find_text"
     ],
     "deny": [
       "Bash(rm -rf /)",
@@ -34,8 +37,14 @@
       "Bash(git commit --amend:*)",
       "Bash(chmod -R 777:*)",
       "Bash(dd if=:*)",
-      "Bash(mkfs:*)",
-      "Bash(:(){ :|:& };:)"
+      "Bash(mkfs:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(rm -rf:*)",
+      "Bash(rm -r:*)"
     ]
-  }
+  },
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": true
 }

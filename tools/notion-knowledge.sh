@@ -43,7 +43,7 @@ data = {
             'title': [{'text': {'content': title}}]
         },
         'Technology': {
-            'select': {'name': technology}
+            'multi_select': [{'name': t.strip()} for t in technology.split(',') if t.strip()]
         }
     },
     'children': [
