@@ -6,6 +6,8 @@
       "Read",
       "Edit",
       "Write",
+      "Edit(.claude/claudeLog.txt)",
+      "Write(.claude/claudeLog.txt)",
       "Glob",
       "Grep",
       "WebFetch",
