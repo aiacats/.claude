@@ -8,3 +8,8 @@
 - CLAUDE.md: 重複行2箇所を統合（知見化の判断目安、コミット規則の二重定義）、README更新をドキュメント作成禁止原則の明示的例外として矛盾解消、
   許可関連の無効記述を1行に集約、claudeLog.txt の読み込み上限（末尾200行）とローテーション基準を追加、コミット規則を「コミットとREADME」小見出しへ整理
 - .gitignore: uploads/, session-env/ を追加、重複していた notion-config（ドット無し）を削除
+[2026-07-03] バグ検証・GUI検証の原則を CLAUDE.md に新設（セクション4、旧4トラブルシュートは5へ繰り下げ）
+- 一般原則: 再現ファースト / 仮説→計測→修正 / 証拠付き報告 / 同一手順で再検証 / git bisect 第一手
+- GUI原則: 視覚バグは視覚で検証（ツール対応表: unity-mcp screenshot / WinUITestKit / win-gui capture / playwright）、
+  Before/Afterキャプチャ、キャプチャ手段の先行整備（2026-06-01教訓）、目視よりアサーション、UIテスト必須（memories/ui_test_mandatory を本文へ昇格）
+- レイアウトバグの調査順序: スタイル未適用→サイズ→環境(DPI/解像度)→コンテンツ→状態網羅
