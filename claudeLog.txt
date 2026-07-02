@@ -1,0 +1,5 @@
+[2026-07-03] グローバル CLAUDE.md の Unity ブロック分離
+- Unity 固有ルール（デバッグフロー・シーン保存・Unity MCP 更新フロー・起動注意・MCP有効化）を rules/unity.md に切り出し
+- settings.json に SessionStart hook を追加: ProjectSettings/ProjectVersion.txt が存在する場合のみ rules/unity.md を context に注入
+- CLAUDE.md 側は参照ポインタに置換（約 3KB 削減、非 Unity セッションの context 節約）
+- hook はパイプテスト済み（Unity 判定あり/なし両方 OK）。次回セッションから有効

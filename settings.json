@@ -41,9 +41,26 @@
       "Bash(rm -r:*)"
     ]
   },
-  "remoteControlAtStartup": true,
-  "agentPushNotifEnabled": true,
   "enabledPlugins": {
     "rust-analyzer-lsp@claude-plugins-official": true
-  }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f ProjectSettings/ProjectVersion.txt ]; then cat ~/.claude/rules/unity.md; fi",
+            "shell": "bash",
+            "timeout": 10,
+            "statusMessage": "Unity ルールを確認中..."
+          }
+        ]
+      }
+    ]
+  },
+  "tui": "fullscreen",
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": true,
+  "model": "claude-fable-5[1m]"
 }

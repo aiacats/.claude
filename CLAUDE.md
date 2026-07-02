@@ -45,14 +45,7 @@
 - 各プロジェクトの使用言語・フレームワークに沿ったやり方（後述参照）でコンパイルエラーなどが発生していないかを確認する。
   発生していた場合には、エラーが無くなり正常にアプリを実行出来るようになるまで修正を行う。
   エラー修正の際には、想定していた実装が実現出来ることを維持して、なおかつ応急処置的な対応ではなく根本原因を解決する。
-- **Unityプロジェクトの場合**、claude-code-mcp-unity MCPツールを使用して以下のデバッグフローを実行する。
-    1. `force_compilation` / `hot_reload` で再コンパイルをトリガする。
-    2. **`wait_for_compilation_done` を1回だけ呼んで完了を待つ**（`check_compilation_status` を polling で連打しない。コンソールがログで詰まり、token も無駄になる）。
-    3. `get_compilation_errors` でエラー内容を取得する。
-    4. `get_console_logs` でランタイムエラーやログを確認する。
-    5. `run_tests` でテストを実行する。
-    6. 必要に応じて `screenshot` でシーンの状態を視覚確認する。
-    7. エラーが見つかった場合は根本原因を解決し、再度このフローを実行する。
+- **Unityプロジェクトの場合**、Unity 固有ルール（`~/.claude/rules/unity.md`、SessionStart hook が自動注入）のデバッグフローに従う。
 
 ### 検証コール頻度の原則（Unity に限らず一般化）
 
@@ -80,7 +73,7 @@
 1. **変更全体の整合性確認** — 修正した全ファイルを通読し、相互依存（namespace解決・型参照・呼び出しチェーン）が壊れていないか確認
 2. **静的レビュー** — 規模が大きい（3ファイル以上 or 100行以上）場合はサブエージェント（general-purpose）を起動して独立レビューを依頼。プロンプトに「コンパイル可否・cross-file consistency・SyncVarやライフサイクル順序の問題」を明示
 3. **検証コマンド実行** — プロジェクトの言語/フレームワークに沿ったやり方でコンパイル・型チェック・テストを実行
-    - Unity: claude-code-mcp-unity の `force_compilation` → `wait_for_compilation_done` → `get_compilation_errors` → `get_console_logs`
+    - Unity: `~/.claude/rules/unity.md` のデバッグフローに従う
     - C++: ビルド実行 → エラー確認
     - その他: lint/format/test を1回ずつ
 4. **発見した問題は即修正** — レビューで指摘された潜在的問題（リーク防止・try/finally・null安全性等）は同じ作業ブロック内で対応する
@@ -220,13 +213,7 @@
 自作 MCP のソースは以下に存在する。MCP に機能追加・修正が必要になったら、**使用中プロジェクト内の embed パッケージを直接いじるのではなく、必ず下記のソースリポジトリを更新する**。プロジェクト固有 Editor スクリプトで MCP 的な機能（例: 自動 Play、UI キャプチャ等）を暫定実装した場合も、恒久化のため MCP 本体へ移設する。
 
 - **WinGui MCP**: `D:\_Personal\Project\WinGuiMcp`
-- **Unity MCP**: `D:\_Personal\Project\unity-mcp`（Unity 側 embed パッケージ名 `com.aiacats.unity-mcp`、GitHub: aiacats/unity-mcp）
-
-### Unity MCP の更新フロー
-1. `D:\_Personal\Project\unity-mcp` のソースを更新（Node サーバー側 + Unity Editor C# 側）。
-2. **このリポジトリに限り、自動でコミット & Push してよい**。
-3. その後、使用中プロジェクトの UPM（embed `com.aiacats.unity-mcp`）を更新して取り込む（PackageCache から再 embed、または file: 参照先の同期）。Claude 自身がこの取り込みまで行う。
-4. 「自動で Play させる機能」など、これまでプロジェクト側 Editor スクリプトに足してきた MCP 的機能は Unity MCP 本体へ入れる。
+- **Unity MCP**: ソース所在・更新フローは `~/.claude/rules/unity.md`（Unity プロジェクトで自動注入）を参照。
 
 ### WinGui MCP の更新フロー
 1. `D:\_Personal\Project\WinGuiMcp` のソースを更新（C# / net9.0-windows、`dotnet build` で検証可）。
@@ -235,8 +222,8 @@
    デプロイ(publish 上書き)は **MCP プロセスが exe をロックしているため Claude Code を終了してから**行う。
    新ツールの反映には Claude Code 再起動が必要(MCP クライアントは接続時にツール一覧を取得するため)。
 
-### Unity 起動時の注意（恒久）
-- Claude のターミナルが管理者権限のことがあり、そこから `Start-Process Unity.exe` すると **Unity が管理者起動**になり
-  「Unity is running as administrator」警告が出る。Unity 起動は **Unity Hub から**行う(またはユーザーに依頼する)のが基本。
-  どうしても CLI 起動する場合も管理者昇格を避ける。
-- MCP の新ツール追加後は、Claude Code 再起動まで新ツールは呼べない（既存ツールは動く）。
+## プロジェクト種別ルールの自動注入
+
+プロジェクト種別ごとの固有ルールは `~/.claude/rules/` 配下に分離し、SessionStart hook（settings.json）が該当プロジェクトでのみ context に注入する。
+
+- `rules/unity.md` — Unity プロジェクト（判定: `ProjectSettings/ProjectVersion.txt` の存在）。デバッグフロー・シーン保存・Unity MCP 更新フロー・起動注意を含む。
