@@ -1,7 +1,6 @@
 # ═══ Secrets (API keys, tokens) ═══
 .credentials.json
 .notion-config
-notion-config
 mcp-needs-auth-cache.json
 
 # ═══ Machine-specific settings ═══
@@ -21,12 +20,14 @@ settings.local.json
 /paste-cache/
 /plans/
 /sessions/
+/session-env/
 /shell-snapshots/
 /stats-cache.json
 /statsig/
 /tasks/
 /telemetry/
 /todos/
+/uploads/
 
 # ═══ Plugins (machine-local install paths) ═══
 /plugins/

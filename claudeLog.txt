@@ -3,3 +3,8 @@
 - settings.json に SessionStart hook を追加: ProjectSettings/ProjectVersion.txt が存在する場合のみ rules/unity.md を context に注入
 - CLAUDE.md 側は参照ポインタに置換（約 3KB 削減、非 Unity セッションの context 節約）
 - hook はパイプテスト済み（Unity 判定あり/なし両方 OK）。次回セッションから有効
+[2026-07-03] グローバル設定の棚卸し（続き）
+- settings.json: claudeLog.txt の Edit/Write 許可を **/claudeLog.txt パターンに強化（全プロジェクト・サブディレクトリ起動でも有効）
+- CLAUDE.md: 重複行2箇所を統合（知見化の判断目安、コミット規則の二重定義）、README更新をドキュメント作成禁止原則の明示的例外として矛盾解消、
+  許可関連の無効記述を1行に集約、claudeLog.txt の読み込み上限（末尾200行）とローテーション基準を追加、コミット規則を「コミットとREADME」小見出しへ整理
+- .gitignore: uploads/, session-env/ を追加、重複していた notion-config（ドット無し）を削除
