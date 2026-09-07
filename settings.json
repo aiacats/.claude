@@ -3,11 +3,10 @@
   "permissions": {
     "allow": [
       "Bash",
+      "Bash(*)",
       "Read",
       "Edit",
       "Write",
-      "Edit(**/claudeLog.txt)",
-      "Write(**/claudeLog.txt)",
       "Glob",
       "Grep",
       "WebFetch",
@@ -41,26 +40,33 @@
       "Bash(rm -r:*)"
     ]
   },
-  "enabledPlugins": {
-    "rust-analyzer-lsp@claude-plugins-official": true
-  },
+  "model": "opus[1m]",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f ProjectSettings/ProjectVersion.txt ]; then cat ~/.claude/rules/unity.md; fi",
+            "command": "if [ -f ProjectSettings/ProjectVersion.txt ] || ls */ProjectSettings/ProjectVersion.txt >/dev/null 2>&1; then cat ~/.claude/rules/unity.md; fi",
             "shell": "bash",
             "timeout": 10,
             "statusMessage": "Unity ルールを確認中..."
+          },
+          {
+            "type": "command",
+            "command": "if [ -f package.json ] || [ -d src-tauri ]; then cat ~/.claude/rules/app.md; fi",
+            "shell": "bash",
+            "timeout": 10,
+            "statusMessage": "アプリ系ルールを確認中..."
           }
         ]
       }
     ]
   },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  },
   "tui": "fullscreen",
-  "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
-  "model": "claude-fable-5[1m]"
+  "remoteControlAtStartup": true
 }
