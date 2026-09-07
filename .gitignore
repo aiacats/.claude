@@ -35,5 +35,16 @@ settings.local.json
 # ═══ Projects (path-encoded, not portable) ═══
 /projects/
 
+# ═══ Daemon / background jobs (machine-local, contains keys) ═══
+/daemon/
+/daemon.lock
+/daemon.status.json
+/daemon.json
+/jobs/
+
+# ═══ Machine-local state (timestamps, updater result) ═══
+/.last-cleanup
+/.last-update-result.json
+
 # ═══ Misc ═══
 *.log
