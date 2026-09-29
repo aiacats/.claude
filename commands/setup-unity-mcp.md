@@ -189,12 +189,26 @@ Unity を触る前に済ませたい場合は `$DEST/Server~/node_modules/@model
 **MCP ツール（`mcp__claude-code-mcp-unity__*`）は Claude Code を再起動するまで呼べないが、
 HTTP API は curl で直接叩ける。** セットアップ当日の検証はこれで完結する。
 
+**ポートを固定で書かない。呼ぶたびに `endpoint.json` から解決し、`/mcp/identity` で相手を確かめてから送る。**
+ドメインリロード（コンパイル）のたびにサーバーが立ち直され、**ポートが変わることがある**。
+空いた元のポートを別プロジェクトの Unity が掴むと、固定ポートの curl は**別プロジェクトへ正常に届いてしまう**
+（実測 2026-09-24: 8092 → 8091 に移った直後、8092 を ModelChecker が取り、`force_compilation` と
+`invoke_method` がそちらへ行った。症状は「Type not found」とコンソールに別プロジェクトのログが出ること）。
+
 ```bash
-BASE=http://localhost:8090/mcp/tools
-curl -sS -X POST $BASE/force_compilation        -H "Content-Type: application/json" -d '{}'
-curl -sS -X POST $BASE/wait_for_compilation_done -H "Content-Type: application/json" -d '{}'
-curl -sS -X POST $BASE/get_compilation_errors   -H "Content-Type: application/json" -d '{}'
-curl -sS -X POST $BASE/get_console_logs         -H "Content-Type: application/json" -d '{"count":60}'
+# umcp <tool> [json] — 接続先のプロジェクト名が一致しなければ送らない
+umcp() {
+  local EP=<Unityプロジェクト>/Library/ClaudeCodeMCP/endpoint.json NAME=<プロジェクト名> PORT
+  for i in $(seq 1 20); do
+    PORT=$(grep -o '"port": *[0-9]*' "$EP" 2>/dev/null | grep -o '[0-9]*$')
+    curl -sS -m 5 "http://localhost:$PORT/mcp/identity" 2>/dev/null | grep -q "\"projectName\": \"$NAME\"" && break
+    PORT=""; sleep 5
+  done
+  [ -z "$PORT" ] && { echo "ERROR: $NAME に接続できない"; return 1; }
+  curl -sS -m 280 -X POST "http://localhost:$PORT/mcp/tools/$1" -H 'Content-Type: application/json' -d "${2:-{\}}"
+}
+umcp force_compilation; sleep 20; umcp wait_for_compilation_done; umcp get_compilation_errors
+umcp get_console_logs '{"count":60}'
 ```
 
 - エンドポイント一覧は `$DEST/Editor/Core/MCPHttpServer.cs` の文字列リテラルを grep すれば分かる。

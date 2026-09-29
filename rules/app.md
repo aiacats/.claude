@@ -56,6 +56,15 @@ cargo test  --manifest-path src-tauri/Cargo.toml --lib
   実測: `commands.rs` 4 / `commands/` 2 / `ipc/` 2）。依存方向は `コマンド層 → 各モジュール`。逆流させない。
 - **ブロッキング I/O は `spawn_blocking` 越しに呼ぶ**。`#[tauri::command] async fn` の中で直接叩くと
   非同期ランタイムのワーカーを占有し、取り消しコマンドが返らなくなる。
+- **同期コマンド（`#[tauri::command] fn`）はウェブビューの IPC ハンドラ、つまり UI スレッドで走る**。
+  そこで待つと待っている間じゅう画面が固まり、`get_status` のような**状態取得ごと止まる**ので
+  進捗表示すら描かれない（「進捗が出ない」ではなく「描く暇が無い」）。
+  時間のかかりうるコマンドは `async fn` + `tauri::async_runtime::spawn_blocking` にする
+  （グローバルの「UI スレッドでは描画と入力だけ」に従う）。
+    - 対象の見分け方: 1 回が短くても**入力量に比例して伸びるもの**は分ける。
+      書き出し、取り込み、ログ走査、要約の作成、応答待ち。
+    - 実例(2026-09-17 Sequence): 書き出しと、収録中のタイムライン要約。
+      どちらも同期のままで画面が固まっていた。
 - **高頻度のイベントを UI へ生で流さない**。受信スレッドと配信スレッドを分け、
   溜まった分をまとめて 1 回で渡す（毎フレーム流すと描画が引きずられる）。
   **配信レートは用途ごとに決めて、根拠をコメントに残す**（グローバルの「当て推量の数値を書かない」に従う）。
@@ -94,6 +103,23 @@ cargo test  --manifest-path src-tauri/Cargo.toml --lib
   **利用者の設定とウィンドウ位置が消える**ため。
 - 複数 OS へ配るものは **`build-win.bat` / `build-mac.command`** に
   「テスト → 型検査 → バンドル」をまとめる。自動更新が要るなら SignalHub の `updater.rs` が参考例。
+- **リリースビルドと配布の手順は `tauri-release` skill** にある（dev の止め方・`CARGO_BUILD_JOBS`・
+  ハッシュ照合・踏んだ罠）。リリースを作るときはそれを呼ぶ。以下は前提の決めごと。
+- **リリースビルドの exe は Google Drive の `gdrive:Builds/<アプリ名>` へ上げる（恒久・ユーザー指示 2026-09-15）**。
+  自分で `rclone copy` はしない。SessionControl デーモンの監視に登録し、以後はビルドするだけで上がる形にする
+  （最新版の固定名と日時付きの控えを揃えて置き、SessionControl の Artifacts タブに結果が出る）。
+    - `D:\_Personal\Project\SessionControl\config.json` の `artifacts` に、そのプロジェクトのルールがあるか見る。
+      無ければ既存の行に揃えて足す: `name`=アプリ名 / `dir`=プロジェクトの絶対パス /
+      `glob`=`src-tauri/target/release/*.exe` / `dest`=`gdrive:Builds/<name>` / `keepHistory`=true。
+      JSON を丸ごと書き直さず、読み込んで `artifacts` だけ足して書き戻す（`token` などを壊さない）。
+    - デーモンは設定を起動時にしか読まないので、足したら再起動する。
+      `Stop-ScheduledTask -TaskName SessionControl` → `server\dist\index.js` を動かしている node と
+      `run-hidden.vbs` の wscript を終了 → `Start-ScheduledTask -TaskName SessionControl`。
+      無関係の node まで落とさないよう、コマンドラインで絞ってから止める。
+    - 確認は SessionControl の最新ログ（`log/yymmdd-hhmmss.log`）の「成果物を監視します: <name>」と、
+      ビルド後の「アップロードしました (<name>)」で行う。監視できないときは「成果物ルール「<name>」: 理由」が出る
+      （画面では `Stopped`）。
+    - 対象は Tauri などの単体 exe。Unity の Player ビルドはフォルダごと数百 MB になるので対象外。
 
 ## UI の作り
 
@@ -131,6 +157,9 @@ cargo test  --manifest-path src-tauri/Cargo.toml --lib
   両方のファイルの冒頭コメントに書き、対応表を README に持つ。
 - **UDP は取りこぼす前提**で作る。欠けを検知して拾い直す経路と、送信側の分割送信を用意する。
 - 相手が応答を返せなくなるほどの要求を一度に投げない（窓で区切る）。
+- **Git Bash から OSC アドレスを引数で渡すときは `MSYS_NO_PATHCONV=1` を付ける**。
+  `/pianokey/L002` のような `/` 始まりの引数は、MSYS のパス変換で `C:/Program Files/Git/pianokey/L002` に書き換わる。
+  送信自体は成功するので、「受信側が反応しない」という原因から遠い症状で出る（2026-09-24 に踏んだ）。
 - **外部プロトコルは原典（SDK のヘッダ・公式ソース）で照合する**。旧コードのコメントを盲信しない
   （実例: `NAT_REQUEST=7` は NatNet v1.x 時代の名残で、2.x 以降は 2 が正）。
 - **「排他だから無理」のような制約は実測してから設計に取り込む**。

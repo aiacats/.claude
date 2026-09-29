@@ -47,7 +47,10 @@
 
 ## 命名・導線（恒久）
 
-- **メニュー名・クラス名・namespace・ファイル名は英語**。UI のラベル・コメント・ログ本文・コミットメッセージは日本語。
+- **メニュー名・クラス名・namespace・ファイル名は英語**。
+  **画面に出るラベル（Editor ウィンドウの見出し・ボタン・フィールド名・ツールチップ・
+  HelpBox の文面）も英語**（グローバル CLAUDE.md「UI の文言と情報の置き場」に従う）。
+  コメント・`log/` のログ本文・コミットメッセージは日本語。
   ウィンドウタイトルはメニュー名と揃える。
 - メニューの置き場所は用途で決める。
     - Editor ウィンドウ … `Window/vortex/<カテゴリ>/...`（Lighting / Camera / Character / Debug など）。
@@ -56,6 +59,9 @@
     - アセットへの操作 … `Assets/vortex/...`（Project の右クリックに出る）
     - `Tools/Vortex/...` は旧系統（11 件）。新規では使わない。
 - プロジェクト名・人名・案件名に由来する命名は使わない。namespace は `vortex` / `vortex.EditorTools`。
+    - **`vortex.EditorTools` の中で `: Editor` と書くとコンパイルが通らない**（CS0118 `'Editor' is a namespace`）。
+      パッケージ側に `vortex.Editor` という namespace があり、そちらに解決されるため。
+      **`: UnityEditor.Editor` と完全修飾で書く**（実例 2026-09-24 Ext_TokinoSora_2026-pia。Safe Mode のダイアログまで出た）。
 - 既存の命名規則に乗せる: 灯体 `VF_*` / OSC 受信 `OscRx_*` / Editor ウィンドウ `*Window`。
 
 ## 作る前に確認すること（恒久）
@@ -107,6 +113,50 @@
       その場合も Editor では `EditorUtility.SetDirty` を呼び、ビルドでは揮発する前提で保存側を用意する。
 - 対象の同定は**実行時 ID ではなくヒエラルキーパス**で行う（対象が増減しても他を巻き込まない）。
 
+## GC スパイクを起こさないか確認する（恒久・ユーザー指示 2026-09-24）
+
+**Unity のシステムを実装したら、再生時に GC スパイクの要因になり得るかを必ず確認する。**
+実装が動くことと、毎フレーム走らせて問題ないことは別。フレーム落ちは原因から遠い場所に出るため、
+後から探すと高くつく。**報告にも「GC の観点で見た結果」を 1 行入れる。**
+
+### まず「どれだけの頻度で走るか」を見る
+
+割り当て 1 回の大きさより、**頻度 × 割り当て**が効く。次に当たるものは要注意。
+
+- `Update` / `LateUpdate` / `FixedUpdate` / `OnGUI`、コルーチンの毎フレーム部
+- **イベントの受信ハンドラ**。自分宛でないものでも呼ばれる種類（OSC・DMX・MIDI・ネットワーク受信）は
+  **リスナー数 × 受信レート**に増幅される
+- 入力の量に比例して増えるループ（灯体 1500 台、キャラ 5 体 × 表情 18 本、など）
+
+### 毎フレーム側でやりがちな割り当て
+
+- **文字列**: 補間 `$"..."`、連結、`ToString()`、`string.Format`。
+  `Debug.Log($"...")` は**フラグで囲っても引数の文字列が先に評価される**
+- **カルチャ依存の文字列比較**: `StartsWith` / `EndsWith` / `IndexOf` に `StringComparison.Ordinal` を
+  付けないと、Unity の Mono では呼ぶたびにヒープを確保する
+- **LINQ**、`foreach` でのインターフェース越しの列挙、`params` 配列
+- **毎回 `new`** する配列 / `List` / `Dictionary` / `WaitForSeconds` / `Vector3[]`
+- **ラムダのクロージャ**（ローカル変数を captured すると毎回 new される）
+- **ボクシング**: `object[]` へ値型を入れる / 出す、enum を `Equals` や辞書のキーに使う
+- **確保版 API**: `GetComponents<T>()`、`Physics.RaycastAll`、`mesh.vertices`、
+  `Texture2D.GetPixels`、`Camera.main`（内部で毎回タグ検索）
+  → 非確保版（`GetComponents(list)`、`RaycastNonAlloc`、`GetPixelData`）や事前キャッシュへ
+
+### 対処の型
+
+- **比較用の文字列やアドレスは初期化時に組み立ててフィールドへ持つ**。ハンドラ内では等値比較だけにする
+- 使い回すバッファ・リストをフィールドに持ち、`Clear()` して再利用する（プール）
+- ハンドラは**冒頭で早期リターン**し、関係ないものに後続の処理を回さない
+- 大きな一時確保（readback・メッシュ操作）は毎フレームから外し、頻度を落とすか非同期にする
+
+### 疑ったら測る
+
+**`ProfilerRecorder(ProfilerCategory.Memory, "GC Allocated In Frame")` を Play 中に読む**。
+実負荷をかけて前後比較する。詳しい注意（使ってはいけない計測 API、Deep Profile の落とし穴、
+保存済み `.data` の読み方）は下の「Unity で GC を測るとき」にまとめてある。
+
+具体例と実測値は次の「OSC 受信の作法」を見る。そこが一番踏みやすい形。
+
 ## OSC 受信の作法（恒久・実測で踏んだ）
 
 uOSC の `onDataReceived` に登録したハンドラは、**自分宛でないメッセージも含めて全 OSC メッセージで呼ばれる**。
@@ -146,8 +196,45 @@ uOSC の `onDataReceived` に登録したハンドラは、**自分宛でない�
 - uOSC の GameObject を Inspector で選択していると `uOscServerEditor` が全メッセージを
   Queue に貯める。計測時は**選択を外す**。
 
+## Player ビルドを壊さない書き方（恒久・ユーザー指示 2026-09-13）
+
+**エディタでコンパイルが通っても Player ビルドは通るとは限らない**。Runtime asmdef（Editor 限定でないアセンブリ）の
+中に UnityEditor 依存があっても、エディタ用コンパイルでは UnityEditor.dll が見えるため**エラーにならず**、
+ビルドした瞬間に初めて落ちる。Unity の実装は常に Player ビルドまで通る書き方をする。
+
+- **UnityEditor の型（`Editor` / `CustomEditor` / `MenuItem` / `AssetDatabase` / `EditorApplication` /
+  `Undo` / `EditorUtility` / `Selection` / `Handles` 等）は Editor 専用アセンブリに置く**。
+  置き場所は `Editor/` フォルダ（asmdef なしなら特殊フォルダ扱い）か、`includePlatforms: ["Editor"]` の asmdef。
+- Runtime 側のファイルにどうしても書くなら、**`using UnityEditor;` からクラス定義末尾まで `#if UNITY_EDITOR` で囲む**。
+  MonoBehaviour と同じファイルに CustomEditor を同居させる書き方は特に踏みやすい。
+- Runtime から「再生中か」を見るなら `EditorApplication.isPlaying` ではなく **`Application.isPlaying`**。
+- **IDE の自動 using の混入に注意**（実例: `using Codice.CM.Common;` = Plastic SCM の Editor 専用型が
+  Runtime スクリプトに紛れ込み、ビルドだけ落ちた）。書いた/触ったファイルの using を見直す。
+- `[ContextMenu]` や `OnValidate` 内でも UnityEditor API を呼ぶなら同様にガードする（メソッド自体は Player にもコンパイルされる）。
+- **検証**: Runtime asmdef 配下を触ったら、エディタコンパイルのエラー 0 件で済ませず、
+  `grep` で UnityEditor 参照に `#if UNITY_EDITOR` が付いているか確認する。大きな変更やビルド前には
+  MCP `build_player` で実際に Player ビルドを通す（Editor.log の `error CS` で原因ファイルが分かる）。
+  （実例 2026-09-13 ShinkaiFes2026: サブモジュールの Runtime 配下 4 ファイルが原因で errors=28 のビルド失敗）
+
 ## 検証の追加ルール（恒久）
 
+- **`Editor.log` は同時に起動している Unity で共有される（実測 2026-09-24）**。
+  別プロジェクトの Unity が動いていると、そちらのコンパイルエラーが同じファイルへ混ざる。
+  `grep "error CS" Editor.log` の結果を、今見ているプロジェクトのものと決めつけない。
+    - 実例(vortex_urp): 別プロジェクト(ModelChecker)の 150 件を自分のプロジェクトのものと読み違え、
+      ありもしない `Assets/Plugins/ClaudeCodeMCP` を探して時間を溶かした（そのフォルダは実在しなかった）。
+    - コンパイルの可否は **MCP 経由で問い合わせる**か、**`Library/ScriptAssemblies/*.dll` が
+      ソースより新しいか**で見る。どちらもプロジェクト単位で確実。
+    - どの Unity が何を開いているかは
+      `Get-CimInstance Win32_Process -Filter "Name='Unity.exe'"` の `CommandLine`（`-projectPath`）で分かる。
+      ウィンドウのダイアログを操作する前にも必ず確認する（別プロジェクトのダイアログを押しかねない）。
+- **Unity が背面（別の仮想デスクトップ・非フォーカス）だと、外から書き換えたファイルを Refresh で拾わない**
+  （`Assets/Refresh` が 0.001 秒で終わる。UniVRM の .vrm → Prefab 生成など delayCall 頼みの処理も止まる）。
+  → 変更したファイルは MCP `invoke_method` で `AssetDatabase.ImportAsset(<path>)` を個別に呼ぶ。
+  確認は `Library/ScriptAssemblies/*.dll` の更新時刻。（実例 2026-09-24 ModelChecker）
+- **Edit モードで PlayableGraph を手動評価（`SetTime` + `Evaluate`）しても、Humanoid の骨に書き込まれない**ことがある
+  （実測: Hips の回転差 0°）。Edit モードでクリップを当てるなら `AnimationClip.SampleAnimation`（Humanoid でも効く。16.4°）。
+  GUI で再生すると動いて見えるので、テストで「当てた直後に動いたか」を必ず測る。（実例 2026-09-24 ModelChecker）
 - **ドメインリロード直後の「エラー 0 件」を信用しない**。MCP のトラッカーはリセットされる。
   `force_compilation` を挟むか、`Library/ScriptAssemblies/*.dll` の更新時刻で実際に再ビルドされたかを確かめる。
 - Submodule / パッケージを変更したら **Runtime と Editor の両アセンブリ**を検証する。
@@ -158,3 +245,32 @@ uOSC の `onDataReceived` に登録したハンドラは、**自分宛でない�
   ただし **asmdef の参照条件までは再現しないので偽陰性がある**（Roslyn は通ったのに Unity 側で
   CS0246、という踏み方を実際にしている）。Unity を開いたら `force_compilation` で必ず確認し直す。
 - **win-gui の `click_text` は日本語 OCR が効かない**。座標クリックを使う。
+- **`GetComponent<T>()` の結果に `??` / `?.` を使わない**。Unity の「偽 null」は C# の null 判定を通り抜け、
+  後で `MissingComponentException` になる（2026-09-24 に同じ日に 2 回踏んだ）。
+  `TryGetComponent(out var c)` か `if (c == null)` で判定する。
+
+## FBX をスクリプトで取り込む・置くとき（実測 2026-09-24）
+
+- **Blender 由来の FBX は、ルートの回転を上書きしない**。`bakeAxisConversion: 0` のままだと、
+  ルートに -90° の軸変換（X=270）が入っている。`SetPositionAndRotation(..., Quaternion.identity)` で置くと、
+  モデルが縦に倒れる（部屋の奥行きが高さになる）。位置だけ設定する。
+  上書きしてしまったら `PrefabUtility.RevertPropertyOverride`（m_LocalRotation / m_LocalEulerAnglesHint）で元に戻す。
+- **Blender の FBX の金属度は URP で 0 になる**（実測 2026-09-27）。Blender は Metallic を `ReflectionFactor` に書くが、
+  URP の `FBXMaterialDescriptionPreprocessor` は読まない。クロームが白い樹脂に見えたらこれ。
+  Ext_TokinoSora_2026-pia の `vortex.EditorTools.BlenderFbxMetallic`（ModelImporter.userData に `vortex:BlenderMetallic` を含む FBX だけ直す）を移植する。
+  **対象の印をアセットのラベルで持たない**。ラベルは取り込み設定の外にあり、変えても再インポートされない
+  （他の PC で .meta だけ pull したときなどに古い結果が残る）。userData なら変えると必ず再インポートされる。
+  **全 FBX に効かせない**（既存の Blender 製 FBX の見た目が一斉に変わる）。金属に部屋を映すにはボックス投影の Reflection Probe を焼く。
+- **埋め込みテクスチャは自動では展開されない**。取り込んだだけでは、マテリアルが真っ白に見える。
+  `ModelImporter.ExtractTextures(<フォルダ>)` で取り出し、`*_Normal` は `TextureImporterType.NormalMap` にしてから、
+  FBX を ForceUpdate で再インポートする。展開した後に `_BaseMap` / `_BumpMap` が埋まっていることを確かめる。
+- シーン上のオブジェクトを**別シーンへ複製する**ときは、`Unsupported.CopyGameObjectsToPasteboard` →
+  `SetActiveScene(新シーン)` → `PasteGameObjectsFromPasteboard` を使う（Ctrl+C / Ctrl+V と同じで、Prefab のリンクとオーバーライドが保たれる）。
+  元のシーンの別オブジェクトへの参照は、シーンをまたぐため保存時に外れる（警告 `Cross scene references are not supported`）。報告に書く。
+    - **貼る前に `Selection.activeGameObject = null` にする**。選択が残っていると貼り付けは**選択オブジェクトの隣＝元シーン側**に入り、
+      名前に ` (1)` が付く。元シーンを閉じるとそのまま消えるので「成功したのに何も無い」になる（実測 2026-09-26）。
+      貼った後は `pasted.scene == 新シーン` を確かめ、同時に開いていたことで付いた連番は元の名前に戻す。
+    - 複製元のアクティブ状態もそのまま来る。キャラはセットアップ用シーンで**非アクティブ**にしてあることが多いので、報告に書く。
+- **シーン YAML の日本語名は `\uXXXX` でエスケープされて保存される**（例: `m_Name: "(新衣装)み..."`）。
+  `grep "みなとん" *.unity` は 0 件になり、「どのシーンにも無い」と誤判定する。日本語名は MCP（`get_gameobject_info`）で引くか、
+  `\u` 形式に直してから grep する。ASCII の部分（`_setupped` など）で grep するのも手（実測 2026-09-26）。
