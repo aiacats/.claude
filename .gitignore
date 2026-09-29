@@ -41,6 +41,8 @@ settings.local.json
 /daemon.status.json
 /daemon.json
 /jobs/
+/state/
+/skills/synced/
 
 # ═══ Machine-local state (timestamps, updater result) ═══
 /.last-cleanup
