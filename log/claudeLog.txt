@@ -16,3 +16,24 @@
 [2026-07-03] UIキャプチャレビューのチェックリストを CLAUDE.md セクション4に追加
 - 運用原則: 相対評価優先（基準と並べて差分を問う）/ 微細ズレは部分拡大 / 目視は一次フィルタ（最終ラインは機械的アサーション）/ 動きは静止画で判定不可
 - 点検項目9つ: 整列・余白・視覚階層・近接・タイポグラフィ・コントラスト・未スタイル検出・クリッピング・プラットフォーム慣習
+
+==== 2026-09-29 グローバルルールの再編（罠・好み・日付またぎの再読み込み） ====
+[依頼] 過去に踏んだ罠をグローバルなルールとして持ち、再度踏まないようにしたい / 好み・こだわりもルール化 / 日を跨いだセッションは最初のタスクでグローバルを読み直す / 重複・まとめられる内容の確認
+[発生していた問題]
+- 旧 SessionStart hook が rules/unity.md（13.6KB）を cat していたが、hook 出力は 10,000 文字超で先頭 2KB の preview に切られていた（claude -p で実測）
+- 一方 ~/.claude/rules/*.md は Claude Code が標準で全セッションに読み込むため、unity.md / app.md は種別に関係なく常時入っていた（hook は切れた preview を二重に積んでいただけ）
+- 罠が CLAUDE.md・rules・18 件のプロジェクト CLAUDE.md・メモリ 100 件超・claudeLog・Notion 100 件に散在し、CLAUDE.md は 645 行で方針・罠・好み・手順が混在
+[実装]
+- rules/traps/<分野>.md: 罠の厳選版 209 件（常時 5 分野、他は paths frontmatter で該当ファイルを Read したときだけ。ユーザー単位の rules でも paths が効くことを claude -p で実測）
+- traps-catalog/<分野>.md: 罠の全件 819 件（grep 用。Notion の後継）。_mcp-fixes.md に MCP 本体で直すべき項目
+- rules/taste/general.md・rendering.md: 好み（history.jsonl の手直し発言・メモリから抽出）
+- project-types/{unity,app}.md + hooks/project-context.mjs: 種別の作業方針を該当プロジェクトでだけ差し込む
+- hooks/trap-guard.mjs + trap-patterns.mjs: 罠 100 件（block 18 / warn 82）をコマンド実行前・実行後・編集後に照合。BMCP/AEMCP/DvcMCP の run_python/run_script のコードも対象。誤検知は trap-ok:<id>
+- hooks/daily-reload.mjs: 開始時に読み込み時刻とファイル一覧を記録し、日付が変わって最初の依頼で更新・削除されたルールを挙げて読み直させる
+- hooks/mcp-context.mjs: Unity MCP / BMCP / AEMCP / DvcMCP を初めて使ったとき、その MCP の罠を一度だけ差し込む
+- CLAUDE.md を方針だけに（645 → 272 行、常時読み込みは 51,144 → 約 27,000 文字）。skill の参照を付け替え
+- ~/.claude の claudeLog を log/ へ移動
+[検証] node hooks/test-hooks.mjs すべて成功（1268 件）。修正を外すとテストが落ちることを確認。claude -p で Unity / 種別なしのフォルダの読み込みを実測。daily-reload はこのセッションで空打ちし、更新 30 件と削除 2 件を挙げることを確認
+[自主レビュー] 独立レビューで High 1 / Medium 6 / Low 12。旧 rules の削除、MCP だけの作業で罠が読まれない件（mcp-context 追加）、テストの偽陽性 2 件、削除の未検知、paths のずれ、重複・矛盾を修正
+[見送り] README コミット許可制のプロジェクトメモリ（vortex_urp）はグローバルより新しい案件側の指示なので残した
+[懸念] Remote Control 経由の依頼で UserPromptSubmit が発火するかは未確認 / trap-guard の warn（Bash）は実行後の通知 / paths は Read 時のみで、Glob・Grep だけでは読まれない / _mcp-fixes.md の各項目は未対応
