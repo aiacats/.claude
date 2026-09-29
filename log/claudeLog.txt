@@ -37,3 +37,11 @@
 [自主レビュー] 独立レビューで High 1 / Medium 6 / Low 12。旧 rules の削除、MCP だけの作業で罠が読まれない件（mcp-context 追加）、テストの偽陽性 2 件、削除の未検知、paths のずれ、重複・矛盾を修正
 [見送り] README コミット許可制のプロジェクトメモリ（vortex_urp）はグローバルより新しい案件側の指示なので残した
 [懸念] Remote Control 経由の依頼で UserPromptSubmit が発火するかは未確認 / trap-guard の warn（Bash）は実行後の通知 / paths は Read 時のみで、Glob・Grep だけでは読まれない / _mcp-fixes.md の各項目は未対応
+
+==== 2026-09-29 作業速度: 許可ダイアログ待ちの解消 ====
+[計測] tools/session-stats.mjs を作成。76 セッション・203 時間の内訳: モデル 41% / 許可ダイアログ待ち 25%（67h）/ ツール 20% / 質問待ち 12% / 停滞 2%。許可待ちの 47 件・46h が rm -r（scratchpad の掃除など）
+[判定] Bash がタイムアウトを超えて返った = 実行前に許可待ち（22h かかった cargo build は timeout 20 分だった）。ファイル操作は 60 秒超を許可待ちとした
+[実装] permissions.ask から rm -r を外し、hooks/rm-guard.mjs が %TEMP% 配下と断定できない再帰削除だけ ask を返す（allow は返さない）
+[検証] test-hooks 1299 件成功。対話セッションで scratchpad の rm -rf は確認なしで通過、D:\_rmguard_test の rm -rf は確認が出て拒否された（テスト用フォルダは残っている）
+[罠] claude -p では作業フォルダ内でもシェルのファイル変更に確認が出るため、許可の試験の代わりにならない（traps-catalog/claude-code.md に記載）
+[次の候補] 読ませる量（入力中央値 398k、400k 超で応答 1.5 倍）/ 待ちの繰り返し 17h / Unity MCP の fetch failed 211 回 / 冒頭の調べ物 中央値 25 回
