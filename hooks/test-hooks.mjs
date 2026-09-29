@@ -265,6 +265,54 @@ expectHit('warn は pre で止めない', guard('pre', 'Bash', { command: 'pip i
   }
 }
 
+// ─── rm-guard ───
+{
+  // 一時フォルダを実在しない固定の場所にして、判定だけを見る
+  const env = { TEMP: 'C:\\TT\\Temp', TMP: 'C:\\TT\\Temp', USERPROFILE: 'C:\\Users\\u', HOME: 'C:\\Users\\u', LOCALAPPDATA: 'C:\\Users\\u\\AppData\\Local' };
+  const rg = (command, cwd = 'D:/proj') => {
+    const out = run('rm-guard.mjs', [], { tool_name: 'Bash', tool_input: { command }, cwd }, env);
+    return out?.hookSpecificOutput?.permissionDecision ?? 'none';
+  };
+  const passes = [
+    'rm -rf "C:/TT/Temp/claude/x/scratchpad/out"',
+    'S="C:/TT/Temp/claude/s"; rm -rf "$S/a" "$S/b"',
+    'S=C:/TT/Temp/claude/s rm -rf $S/a',
+    'rm -rf /tmp/foo',
+    'rm -rf "$TEMP/claude/x/export"* 2>/dev/null; npm test',
+    'cd "C:/TT/Temp/claude/s" && rm -rf out',
+    'rm -rf /c/TT/Temp/claude/x >/dev/null 2>&1 && ls',
+    'rm -f C:/proj/file.txt',
+    'rm C:/proj/a.txt',
+    'echo "rm -rf C:/x"',
+    'npm run build && ls dist',
+  ];
+  for (const c of passes) check(`rm-guard: 確認を出さない 「${c.slice(0, 60)}」`, rg(c) === 'none', rg(c));
+  const asks = [
+    'rm -rf D:/_Personal/Project/X/build',
+    'rm -rf $TEMP',
+    'rm -rf "$TEMP/"*',
+    'rm -rf C:/TT/Temp/../Users/u',
+    'rm -rf "$UNKNOWN/x"',
+    'rm -rf "$(pwd)/x"',
+    'rm -rf build',
+    'cd /d/proj && rm -r node_modules',
+    'find . -name "*.tmp" -exec rm -rf {} +',
+    'ls | xargs rm -rf',
+    'rm -fr ~/x',
+    'rm -R C:/x',
+    'rm --recursive C:/x',
+    'rm -rf "C:/TT/Temp/claude/ok" D:/proj/src',
+    'cd C:/TT/Temp && cd "$X" && rm -rf y',
+  ];
+  for (const c of asks) check(`rm-guard: 確認を出す 「${c.slice(0, 60)}」`, rg(c) === 'ask', rg(c));
+  check('rm-guard: 相対パスは作業フォルダが一時フォルダ内なら通す', rg('rm -rf out', 'C:/TT/Temp/claude/s') === 'none');
+  check('rm-guard: 作業フォルダが分からない相対パスは確認', rg('rm -rf out', '') === 'ask');
+  check('rm-guard: allow は決して返さない', ![...passes, ...asks].some((c) => rg(c) === 'allow'));
+  const settings = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'));
+  check('rm-guard: settings.json の PreToolUse に配線されている', (settings.hooks?.PreToolUse ?? []).some((h) => /Bash/.test(h.matcher) && h.hooks.some((x) => x.command.includes('rm-guard.mjs'))));
+  check('rm-guard: permissions.ask に rm -r が残っていない（残っていると一時フォルダでも止まる）', !(settings.permissions?.ask ?? []).some((r) => /^Bash\(rm -r/.test(r)));
+}
+
 // ─── project-context ───
 {
   const LIMIT = 10000; // hook 出力の上限（公式仕様。超えると 2,000 文字の preview に切られる）

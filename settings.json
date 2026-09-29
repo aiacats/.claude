@@ -33,9 +33,7 @@
       "Bash(mkfs:*)"
     ],
     "ask": [
-      "Bash(git push:*)",
-      "Bash(rm -rf:*)",
-      "Bash(rm -r:*)"
+      "Bash(git push:*)"
     ]
   },
   "model": "opus[1m]",
@@ -78,6 +76,17 @@
           {
             "type": "command",
             "command": "node ~/.claude/hooks/trap-guard.mjs pre",
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/rm-guard.mjs",
             "shell": "bash",
             "timeout": 10
           }
