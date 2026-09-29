@@ -16,6 +16,8 @@
 | `mcp-context/unity-mcp.md` | Unity MCP の罠 | Unity MCP を初めて使ったとき（`hooks/mcp-context.mjs`。BMCP / AEMCP / DvcMCP は `rules/traps/` の該当ファイルを出す） |
 | `hooks/trap-patterns.mjs` | 機械的に見つけられる罠 100 件（block 18 / warn 82） | コマンド実行前・実行後・編集後（`hooks/trap-guard.mjs`） |
 | `hooks/daily-reload.mjs` | 日付をまたいだセッションで、更新・削除されたルールを読み直させる | 開始時に記録、日付が変わって最初の依頼で通知 |
+| `hooks/rm-guard.mjs` | 再帰削除（`rm -r` 系）の対象が一時フォルダ（`%TEMP%` 配下）の中と断定できないときだけ確認を出す。以前の `permissions.ask` の `rm -r` の代わり（scratchpad の掃除で何時間も止まっていたため） | Bash の実行前 |
+| `tools/session-stats.mjs` | セッション記録から作業時間の内訳（モデル・ツール・ユーザー待ち・許可待ち・停滞）を集計する | 手動 |
 | `skills/` | 手順（順番・コマンド・補助スクリプト） | 呼んだとき |
 
 `rules/` 配下は Claude Code が再帰的に自動で読む（frontmatter の `paths:` があれば、一致するファイルを Read したときだけ）。

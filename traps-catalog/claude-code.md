@@ -310,3 +310,11 @@ Claude Code 本体（hooks・settings・permissions・MCP の登録/有効化・
 - 実例: 2026-09-17 MotionForge
 - 自動検出: 不可
 - 出典: D---Personal-Project-MotionForge/memory/rebuild-after-mutation-check.md:10-15
+
+### 許可の挙動を claude -p で試しても対話セッションの代わりにならない
+- 症状: `claude -p --permission-mode auto` で `rm -rf <作業フォルダ内>` を試すと、許可ルールを外しても「needs approval」で拒否される。
+- 原因: ヘッドレスのセッションでは、シェルがファイルを作る・変える・消す操作に、作業フォルダの中でも Claude Code 本体が確認を出す（`Claude Code asks before a shell command creates, changes or removes files there`）。確認できないので拒否になる。
+- 対策: 許可ルールや hook の permissionDecision の効き目は、実際の対話セッションで試す。`-p` で見られるのは hook の出力と拒否の理由まで（`--output-format stream-json --verbose` で tool_result の文面を読む）。
+- 実例: 2026-09-29 ~/.claude（rm-guard の導入）
+- 自動検出: 不可
+- 出典: ~/.claude/log/claudeLog.txt 2026-09-29
