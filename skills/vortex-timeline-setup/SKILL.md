@@ -186,7 +186,7 @@ Play を抜けて、シーンを保存する。
 - **キャラごとに Timeline を分けたら `Play On Awake` はオフ**にする。両方が起動時に鳴ると DMX が同じ `MetaDmxReceiver` を取り合う。
   表示の切り替えは各 Timeline に **Activation トラック**（0 秒〜全長、`postPlaybackState = Revert`）を持たせる
 - **キャラはセットアップ済みの個体を持ってくる。** セットアップ用シーン（`ShinkaiFes2026_Grand_modelSetup` など）の
-  `<名前>(NiloToon)_setupped` を、プレハブのリンクを保ったままコピーする（手順は `rules/unity.md`「別シーンへ複製する」）。
+  `<名前>(NiloToon)_setupped` を、プレハブのリンクを保ったままコピーする（手順と罠は `~/.claude/traps-catalog/unity-editor.md` を「別シーン」で grep）。
   コピー元で**非アクティブ**のことが多い。日本語名は YAML で `\uXXXX` になるので grep では見つからない（同所）
 - 動きの確認は骨の値で取れる: `Animator.GetBoneTransform(HumanBodyBones)` の instanceId に対し
   `Transform.get_rotation` を数秒おいて 2 回。フェイシャルは `SkinnedMeshRenderer.GetBlendShapeWeight`（口の `A` など）

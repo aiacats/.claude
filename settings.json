@@ -45,17 +45,65 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f ProjectSettings/ProjectVersion.txt ] || ls */ProjectSettings/ProjectVersion.txt >/dev/null 2>&1; then cat ~/.claude/rules/unity.md; fi",
+            "command": "node ~/.claude/hooks/project-context.mjs",
             "shell": "bash",
             "timeout": 10,
-            "statusMessage": "Unity ルールを確認中..."
+            "statusMessage": "プロジェクト種別の方針を確認中..."
           },
           {
             "type": "command",
-            "command": "if [ -f package.json ] || [ -d src-tauri ]; then cat ~/.claude/rules/app.md; fi",
+            "command": "node ~/.claude/hooks/daily-reload.mjs session-start",
             "shell": "bash",
-            "timeout": 10,
-            "statusMessage": "アプリ系ルールを確認中..."
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/daily-reload.mjs prompt",
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|mcp__bmcp__blender_run_python|mcp__aemcp__ae_run_script|mcp__dvcmcp__resolve_run_python",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/trap-guard.mjs pre",
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash|PowerShell|mcp__bmcp__blender_run_python|mcp__aemcp__ae_run_script|mcp__dvcmcp__resolve_run_python",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/trap-guard.mjs post",
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*unity.*__.*|mcp__bmcp__.*|mcp__aemcp__.*|mcp__dvcmcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/mcp-context.mjs",
+            "shell": "bash",
+            "timeout": 10
           }
         ]
       }

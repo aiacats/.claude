@@ -28,6 +28,9 @@ python "$SH" list                    # いま置いてあるもの
 python "$SH" clean [日数]            # 指定日数より古いものを消す（既定 7 日）
 ```
 
+「上げたのに見えない」「MCP から Not found」「権限を外したい」ときは、先に `~/.claude/traps-catalog/cloud-sync.md` を見る
+（rclone と MCP 連携でアカウントが違う、権限の削除は Drive API を直接叩く、など）。
+
 置き場は共有用フォルダ（ID `1CFs1lfQmZAyQL_txLZ8u7r-FAkF2hyY9`）。
 **ビルド成果物の自動配布先（`gdrive:Builds/<アプリ名>`）とは別**。あちらは SessionControl
 デーモンが上げる場所なので、人の手で混ぜない。
@@ -60,5 +63,5 @@ python "$SH" clean [日数]            # 指定日数より古いものを消す
 
 - 画面の静止画 … `windows-gui-testing` skill の `gui.ps1 shot`（PNG で保存できる）
 - 画面の録画 … `screen-recording` skill（OBS → mp4）
-- ビルド成果物 … 各プロジェクトのビルド手順。Tauri は `rules/app.md` 参照
+- ビルド成果物 … 各プロジェクトのビルド手順。Tauri は `project-types/app.md` と `tauri-release` skill 参照
   （リリース exe は SessionControl が自動で Drive へ上げるので、手で上げ直さない）
