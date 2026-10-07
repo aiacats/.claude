@@ -3,7 +3,7 @@
 前提: UV は「1m = 1UV」なので、1 枚の画像が実寸 1m 角に対応する。
 端で繋がるように、全てのノイズは折り返し（wrap）ありで作る。
 
-素材は carpet / fabric / plaster / wood / foam、金物の brushed / powder_coat / galvanized、rubber を用意してある。
+素材は carpet / fabric / plaster / wood / foam / painted_panel、金物の brushed / powder_coat / galvanized、rubber を用意してある。
 使い込んだ跡は scratches（細い引っかき傷の印）と wear（擦れ・汚れを既存の模様へ重ねる）。どれも (明暗, 高さ) を返すので、
 tint() で色を掛けてカラーマップに、height_to_normal() でノーマルマップにする。
 新しい素材を足すときも同じ形（0〜1 の 2 枚を返す）に揃える。
@@ -302,3 +302,16 @@ def wear(shade_height, seed: int, scuffs: float = 1.0, grime: float = 1.0, scrat
     shade = shade * (1.0 - (grime_map - 0.5) * 0.25 * grime) + scuff_map * 0.10 * scuffs + scr * 0.12 * scuffs
     height = height - scr * 0.3 * scuffs                    # 正規化し直さない（元の起伏の強さを保つ）
     return shade * (mean_before / float(shade.mean())), height   # 平均の明るさは元のまま（擦れで全体を明るくしない）
+
+
+def painted_panel(res: int = 512, seed: int = 111, panels: int = 1):
+    """塗装した化粧パネル（腰壁・手すり壁・カウンター）。細かい塗りむらと、1m あたり panels 枚の縦の目地、薄い擦り傷。"""
+    y, x = np.mgrid[0:res, 0:res] / res
+    paint = fbm(res, 32, 3, seed)
+    big = fbm(res, 4, 3, seed + 3)
+    edge = np.minimum((x * panels) % 1.0, 1.0 - (x * panels) % 1.0)
+    seam = np.clip(edge / 0.004, 0.0, 1.0)                 # 目地の幅は約 4mm（1m 角に対して）
+    scr = scratches(res, seed + 5, 30, (0.02, 0.08))
+    height = normalize(paint * 0.3 + seam * 0.7 - scr * 0.2)
+    shade = (0.96 + (paint - 0.5) * 0.06 + (big - 0.5) * 0.10 + scr * 0.8) * (0.55 + 0.45 * seam)
+    return mean_one(shade), height

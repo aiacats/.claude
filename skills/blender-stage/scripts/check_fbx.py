@@ -8,6 +8,7 @@
 標準出力の `RESULT {...}` を見る。
 - textured_by_image: Base Color に画像が直接つながったマテリアル。FBX は Mix 経由の画像を運ばないので、
   色テクスチャを使っているはずのマテリアルがここに無ければ、Unity では白くなる。
+- normal_mapped: ノーマルマップの画像がつながったマテリアルの数（Normal の入口がつながっているだけでは数えない）。
 - dup_mesh_names: `.001` 付きのメッシュ名。モディファイア付きのメッシュは取り込み時に必ず `.001` になる
   （無害。band_studio で 88 件）。作り直しで古いメッシュデータが残っているとさらに増えるので、前回との差で見る。
 """
@@ -31,13 +32,18 @@ pts = [o.matrix_world @ Vector(c) for o in meshes for c in o.bound_box]
 lo = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
 hi = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
 
-textured, flat = [], []
+textured, flat, normal_mapped = [], [], []
 for m in bpy.data.materials:
     b = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None) if m.use_nodes else None
     if b is None:
         continue
     links = b.inputs["Base Color"].links
     (textured if links and links[0].from_node.type == "TEX_IMAGE" else flat).append(m.name)
+    # ノーマルマップ: 読み込み側は画像が無くても Normal Map ノードを作ることがあるので、画像がつながっているかで見る
+    if any(n.type == "NORMAL_MAP" and n.inputs["Color"].is_linked
+           and n.inputs["Color"].links[0].from_node.type == "TEX_IMAGE"
+           and n.inputs["Color"].links[0].from_node.image is not None for n in m.node_tree.nodes):
+        normal_mapped.append(m.name)
 
 roots = [o.name for o in objs if o.parent is None]
 print("RESULT " + json.dumps({
@@ -50,5 +56,6 @@ print("RESULT " + json.dumps({
     "no_uv": [o.name for o in meshes if not o.data.uv_layers][:5],
     "textured_by_image": sorted(textured),
     "flat_color": len(flat),
+    "normal_mapped": len(normal_mapped),
     "dup_mesh_names": sum(1 for me in bpy.data.meshes if me.name[-4:-3] == "." and me.name[-3:].isdigit()),
 }, ensure_ascii=False))
