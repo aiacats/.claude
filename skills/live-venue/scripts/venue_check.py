@@ -58,6 +58,7 @@ def parse():
     ap.add_argument("--focus", default="0,0,0")
     ap.add_argument("--no-units", action="store_true")
     ap.add_argument("--size", default="480x300")
+    ap.add_argument("--inner", action="store_true", help="単位の中の部品どうしの食い込みも report.json の inner に出す（数には入れない）")
     return ap.parse_args(argv)
 
 
@@ -106,7 +107,7 @@ def hierarchy(root):
     return sorted(units, key=lambda u: u.name), issues
 
 
-def checks(root, allow, bmcp):
+def checks(root, allow, bmcp, units=(), inner=False):
     sys.path.insert(0, os.path.join(bmcp, "addon"))
     from bmcp.ops import assembly                                    # 登録せずに import（op は呼べる）
     t = time.time()
@@ -117,7 +118,18 @@ def checks(root, allow, bmcp):
     t_ov = time.time() - t
     floating = [{"parts": f["parts"], "gap": f["gap"], "nearest": f["nearest"], "center": f["center"]}
                 for a in fl["assemblies"] for f in a["floating"]]
-    return floating, ov, {"floating": round(t_fl, 1), "overlaps": round(t_ov, 1)}
+    sec = {"floating": round(t_fl, 1), "overlaps": round(t_ov, 1)}
+    found_inner = []
+    if inner:
+        # 単位の中は、作りとして重ねた所（クランプ・継ぎ目）も出る。数には入れず、一覧を人が見て意図しない物だけ直す
+        t = time.time()
+        for u in units:
+            if sum(1 for c in u.children_recursive if c.type == "MESH") < 2:
+                continue
+            r = assembly.mesh_overlaps(Ctx(), objects=[u.name], unit="object", allow=allow, capture=False)
+            found_inner += [{"unit": u.name, "a": p["a"], "b": p["b"], "depth": p["depth"]} for p in r["pairs"]]
+        sec["inner"] = round(time.time() - t, 1)
+    return floating, ov, sec, found_inner
 
 
 # --------------------------------------------------------------------------- 撮影
@@ -286,7 +298,7 @@ def main():
     root = bpy.data.objects[a.root]
     allow = json.load(open(a.allow, encoding="utf-8")) if a.allow else []
     units, hier = hierarchy(root)
-    floating, ov, sec = checks(root, allow, a.bmcp)
+    floating, ov, sec, inner = checks(root, allow, a.bmcp, units, a.inner)
     size = tuple(int(v) for v in a.size.split("x"))
     focus = tuple(float(v) for v in a.focus.split(","))
     wide, unit_shots = shots(root, units, focus, a.out, size, not a.no_units)
@@ -294,13 +306,13 @@ def main():
         "root": root.name, "units": len(units), "meshes": sum(1 for o in root.children_recursive if o.type == "MESH"),
         "hierarchy": hier, "floating": floating,
         "overlaps": [{k: p[k] for k in ("a", "b", "unitA", "unitB", "depth", "measured", "center")} for p in ov["pairs"]],
-        "allowedPairs": ov["allowedPairs"], "seconds": sec,
+        "allowedPairs": ov["allowedPairs"], "seconds": sec, "inner": inner,
         "sheets": sheets(wide, a.out, "wide", size) + sheets(unit_shots, a.out, "units", size),
     }
     with open(os.path.join(a.out, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
     print("RESULT " + json.dumps({"units": report["units"], "hierarchy": len(hier), "floating": len(floating),
-                                  "overlaps": len(report["overlaps"]), "allowed": ov["allowedPairs"],
+                                  "overlaps": len(report["overlaps"]), "allowed": ov["allowedPairs"], "inner": len(inner),
                                   "sheets": len(report["sheets"]), "seconds": sec}, ensure_ascii=False))
     sys.stdout.flush()
     os._exit(1 if (hier or floating or report["overlaps"]) else 0)
