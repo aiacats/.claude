@@ -18,6 +18,7 @@ tint() で色を掛けてカラーマップに、height_to_normal() でノーマ
 """
 from __future__ import annotations
 
+import math
 import os
 
 import bpy
@@ -255,12 +256,74 @@ def powder_coat(res: int = 512, seed: int = 71, scratch_count: int = 40, scratch
     scratch_gain は傷の明るさ（色に掛ける倍率への足し分）。黒い塗装では 1.6 でうっすら見える。
     明るい色に同じ値を使うと白い線が目立つので、灰色の扉などでは 0.3 程度に下げる。
     """
-    peel = fbm(res, 64, 3, seed)
+    # 柚子肌の粒: 1m（= 1UV）に 128 個（約 8mm）。64 個（1.6cm）では機材に寄った画で槌目の塗装に見えた（2026-10-08）
+    peel = fbm(res, min(128, res // 4), 3, seed)
     big = fbm(res, 4, 3, seed + 5)
     scr = scratches(res, seed + 9, scratch_count, (0.01, 0.06))
     height = normalize(peel * 0.7 + big * 0.1 - scr * 0.5)
     shade = 0.95 + (peel - 0.5) * 0.10 + (big - 0.5) * 0.12 + scr * scratch_gain
     return mean_one(shade), height
+
+
+def perforated(res: int = 2048, holes_per_m: int = 224, open_ratio: float = 0.45, seed: int = 131):
+    """打ち抜きの鋼板（スピーカーのグリル）: 千鳥（60°）に並んだ丸穴。穴は暗く（奥の布）、板は柚子肌の塗装。
+
+    holes_per_m は 1m（= 1UV）あたりの穴の列の数（224 で 4.5mm ピッチ）。偶数にする（千鳥の行の偶奇が 1 枚の端と端で揃い、
+    並べたときに継ぎ目が出ない）。穴 1 つに res / holes_per_m 画素（2048 / 224 ≒ 9px。寄りの画で丸に見える下限）。
+    open_ratio は開口率（穴の面積の割合。スピーカーのグリルは 40〜50%）。
+    """
+    y, x = np.mgrid[0:res, 0:res].astype(np.float32) / res * holes_per_m
+    row = np.floor(y)
+    xs = x + (row % 2) * 0.5                                 # 1 行おきに半ピッチずらす（千鳥）
+    fx, fy = xs - np.floor(xs) - 0.5, y - row - 0.5
+    d = np.sqrt(fx * fx + fy * fy)
+    r = math.sqrt(open_ratio / math.pi)                      # 1 ピッチ角の中の円の面積 = 開口率
+    hole = np.clip((r - d) * res / holes_per_m * 1.5 + 0.5, 0.0, 1.0)   # 縁を 1px ほどぼかす（ちらつき止め）
+    peel = fbm(res, 64, 2, seed)
+    height = normalize((1.0 - hole) * 0.8 + peel * 0.2)
+    shade = (1.0 - hole) * (0.97 + (peel - 0.5) * 0.08) + hole * 0.25
+    return mean_one(shade), height
+
+
+def ui_screen(res: int = 512, seed: int = 141, channels: int = 12, kind: str = "mixer") -> np.ndarray:
+    """卓の画面に映す仮の操作画面（RGB、0〜1）。暗い地に、チャンネルの帯（色の付いた見出し・メーター・数値の行）か、
+    照明卓の表（色の付いた見出しの行と、細い文字の行）。実データが無いときの「それらしい」画面ではなく、画面の存在が分かる程度の模様。
+
+    UV は画面の板に 0〜1 で貼る前提（1m = 1UV ではない）。縦横比は呼ぶ側の板に合わせて伸びる。
+    """
+    rng = np.random.default_rng(seed)
+    img = np.zeros((res, res, 3), np.float32)
+    img[:] = (0.035, 0.04, 0.05)
+    palette = np.array([(0.2, 0.55, 0.9), (0.9, 0.55, 0.15), (0.35, 0.8, 0.35), (0.85, 0.3, 0.35), (0.7, 0.45, 0.9), (0.9, 0.85, 0.3)])
+    if kind == "mixer":
+        cw = res // channels
+        for c in range(channels):
+            x0, x1 = c * cw + 2, (c + 1) * cw - 2
+            col = palette[(c // 4) % len(palette)]
+            img[res - res // 12:res - 4, x0:x1] = col * 0.9                         # 見出し（チャンネル名の帯）
+            for r in range(4):                                                      # 数値の行（細い明るい線）
+                y = res - res // 12 - 14 - r * 12
+                img[y:y + 3, x0 + 3:x1 - 3 - int(rng.integers(0, cw // 3))] = 0.55
+            lvl = rng.uniform(0.2, 0.85)                                            # メーター
+            top = int(res * 0.08 + lvl * res * 0.5)
+            mx = (x0 + x1) // 2
+            img[int(res * 0.08):top, mx - 3:mx + 3] = (0.25, 0.85, 0.3)
+            img[int(res * 0.08 + 0.42 * res):top, mx - 3:mx + 3] = (0.9, 0.8, 0.2)
+            img[int(res * 0.06):int(res * 0.065), x0:x1] = 0.3                      # 区切り
+    else:
+        rows = 18
+        rh = res // rows
+        for r in range(rows):
+            y0 = res - (r + 1) * rh
+            if r == 0:
+                img[y0:y0 + rh - 2, :] = (0.15, 0.17, 0.2)
+                continue
+            for c in range(8):
+                x0 = c * res // 8 + 3
+                w = int(rng.integers(res // 24, res // 10))
+                col = palette[int(rng.integers(0, len(palette)))] if rng.random() < 0.3 else np.array((0.6, 0.62, 0.65))
+                img[y0 + rh // 3:y0 + rh // 3 + 3, x0:x0 + w] = col
+    return img
 
 
 def galvanized(res: int = 512, seed: int = 81):

@@ -45,6 +45,7 @@ ALT_TURNS = (0, 60, -60, 120, -120, 180)
 CLEAR_ENOUGH = 0.7
 CLOSE_TILT = 0.6        # 寄りの画の見下ろし（水平 1 に対して上へ 0.6 = 約 31°。天板の上と正面が両方写る）
 MIN_CLEAR = 0.05        # 遮る物がすぐ手前にあっても、カメラを狙う点からこれ以上は離す（near clip 0.05 と同じ）
+MIN_DEPTH = 0.0005      # 食い込みの下限（0.5mm。薄い板の厚みの半分 = 幅木 6mm・幕 3mm より十分小さく、接しているだけの組（深さ 0）は出ない）
 RAY_HITS = 64           # 光線が通り抜けてよい面の数の上限（自分の部品と、内側から抜ける面。会場の寄りでは十数枚）
 
 
@@ -114,7 +115,9 @@ def checks(root, allow, bmcp, units=(), inner=False):
     fl = assembly.mesh_floating_parts(Ctx(), objects=[root.name], capture=False)
     t_fl = time.time() - t
     t = time.time()
-    ov = assembly.mesh_overlaps(Ctx(), objects=[root.name], unit_depth=2, allow=allow, capture=False)
+    # 下限を明示する（op の既定は全体の対角の 1/1000 などで数 mm になり、薄い板（幅木・幕の帯）の中に入った物を見逃す。
+    # 深さは板の厚みの半分で頭打ちになるため。2026-10-08 のレビュー）
+    ov = assembly.mesh_overlaps(Ctx(), objects=[root.name], unit_depth=2, allow=allow, min_depth=MIN_DEPTH, capture=False)
     t_ov = time.time() - t
     floating = [{"parts": f["parts"], "gap": f["gap"], "nearest": f["nearest"], "center": f["center"]}
                 for a in fl["assemblies"] for f in a["floating"]]

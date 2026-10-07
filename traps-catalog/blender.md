@@ -178,5 +178,22 @@ Blender（bpy・アドオン・モディファイア・シェイプキー・リ�
 - Euler の成分を足して回転を合成しない
 - GLB 由来のメッシュは面ごとに頂点が分かれている
 - 共有中の Blender で `read_homefile` / `open_mainfile` しない。検証・アセット登録は別プロセス（`blender -b ... -P`）で行う（実例 2026-09-26 BMCP / band_studio）
-- `blender_capture` に Empty を渡すと画角が潰れる／室内は外から撮るので見えない／Workbench はノードの色を見ない
+- `blender_capture` に Empty を渡すと画角が潰れる（2026-10-07 BMCP で修正。Empty は子孫を撮る。再起動前の古い BMCP では残る）／室内は外から撮るので見えない／Workbench はノードの色を見ない
+- 部品を置き場所の式だけで並べると、支えの無い部品が空中に浮く（ブームのカウンターウェイト。遠景レンダーでは気付けない）→ `blender_mesh_floating_parts` で拾って寄って見る（実例 2026-10-07 band_studio）
 - 出典: skills\blender-stage\SKILL.md「先に読む」「Unity へ出す」
+
+### 丸めた角・多角形の円筒の面に「ちょうど接する」位置で付けた部品が 0.5〜2mm 浮く
+- 症状: 寄ると、レバー・フード・番号札・刻みの輪が本体からわずかに離れて見える。遠景では気付かない。
+- 原因: ベベルで丸めた角や、多角形の円筒の弦は、理論の面より内側にある。理論の面の位置に置いた部品は、その分だけ浮く。
+- 対策: 付ける部品は相手へ数 mm 差し込む。マテリアルごとに 1 メッシュへまとめたキットは、つながった塊に分けてから浮きを調べる（skill live-venue の `asset_check.py`）。
+- 実例: 2026-10-08 BlenderScenes のカメラ機材で 16 件・クレーンで 62 件
+- 自動検出: `asset_check.py`（塊ごとの mesh_floating_parts）
+- 出典: skill live-venue 4.5 節
+
+### 1m = 1UV で寄った画では、ノーマルマップの柚子肌が槌目の塗装に見える
+- 症状: 作業台で UV を貼った途端、カメラや雲台が叩いた金属のようにでこぼこに見える。会場の遠景では気付かない。
+- 原因: 柚子肌の粒が 1.6cm（fbm 64 個 / m）で、ノーマルの強さ 0.4〜0.9 が機材の寄りには強すぎた。
+- 対策: 粒を 1m に 128 個（約 8mm）へ細かくし、機材の塗装・樹脂のノーマルを 0.12〜0.2 へ下げる。寄りの画で確かめる。
+- 実例: 2026-10-08 BlenderScenes（M_Fixture_Body / M_Camera_Body / M_PA_Paint）
+- 自動検出: 不可
+- 出典: BlenderScenes/scripts/live_parts.py の materials()
