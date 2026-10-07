@@ -3,7 +3,8 @@
 前提: UV は「1m = 1UV」なので、1 枚の画像が実寸 1m 角に対応する。
 端で繋がるように、全てのノイズは折り返し（wrap）ありで作る。
 
-素材は carpet / fabric / plaster / wood を用意してある。どれも (明暗, 高さ) を返すので、
+素材は carpet / fabric / plaster / wood / foam、金物の brushed / powder_coat / galvanized、rubber を用意してある。
+使い込んだ跡は scratches（細い引っかき傷の印）と wear（擦れ・汚れを既存の模様へ重ねる）。どれも (明暗, 高さ) を返すので、
 tint() で色を掛けてカラーマップに、height_to_normal() でノーマルマップにする。
 新しい素材を足すときも同じ形（0〜1 の 2 枚を返す）に揃える。
 
@@ -33,22 +34,33 @@ def _smooth(a: np.ndarray, passes: int = 1) -> np.ndarray:
     return out
 
 
+def _interp_grid(grid: np.ndarray, res: int) -> np.ndarray:
+    """格子（行 × 列）の値を res × res へ、なめらかな補間（smoothstep の重みの双線形）で広げる。端は折り返して繋がる。
+
+    最近傍で拡大してからぼかすやり方は、ぼかしがマスの大きさに比べて弱いと、マスの角が模様に残る（床がマス目に見えた）。
+    """
+    def axis(n):
+        t = np.arange(res) * n / res
+        i0 = np.floor(t).astype(int) % n
+        f = t - np.floor(t)
+        return i0, (i0 + 1) % n, f * f * (3 - 2 * f)
+    r0, r1, fr = axis(grid.shape[0])
+    c0, c1, fc = axis(grid.shape[1])
+    top = grid[r0][:, c0] * (1 - fc)[None, :] + grid[r0][:, c1] * fc[None, :]
+    bot = grid[r1][:, c0] * (1 - fc)[None, :] + grid[r1][:, c1] * fc[None, :]
+    return top * (1 - fr)[:, None] + bot * fr[:, None]
+
+
 def value_noise(res: int, freq: int, seed: int) -> np.ndarray:
     """周期 freq の値ノイズ（0〜1、タイリングする）。"""
     rng = np.random.default_rng(seed)
-    grid = rng.random((freq, freq))
-    # 最近傍で拡大してから何度もぼかす（端は roll で繋がる）
-    rep = res // freq + 1
-    big = np.kron(grid, np.ones((rep, rep)))[:res, :res]
-    return _smooth(big, passes=max(2, rep // 2))
+    return _interp_grid(rng.random((freq, freq)), res)
 
 
 def fbm(res: int, freq: int, octaves: int, seed: int, gain: float = 0.5) -> np.ndarray:
     total = np.zeros((res, res))
     amp, f, norm = 1.0, freq, 0.0
     for i in range(octaves):
-        if res % f:
-            f = max(1, res // (res // f))
         total += value_noise(res, f, seed + i * 17) * amp
         norm += amp
         amp *= gain
@@ -169,6 +181,11 @@ def wood(res: int = 1024, seed: int = 31, boards: int = 3, rings: float = 22.0):
     return shade, height
 
 
+def mean_one(shade: np.ndarray) -> np.ndarray:
+    """明暗の平均を 1 に揃える（tint に渡した色が、そのまま面の平均の色になる）。"""
+    return shade / float(shade.mean())
+
+
 def tint(shade: np.ndarray, color) -> np.ndarray:
     """明暗（0〜1 前後）に色を掛けて RGB にする。"""
     s = np.clip(shade, 0.0, 2.0)[..., None]
@@ -189,3 +206,99 @@ def foam(res: int = 1024, seed: int = 41, cells: int = 8):
     height = normalize(wedge * 0.85 + grain)
     shade = 0.62 + wedge * 0.30 + (grain - 0.075) * 0.4
     return shade, height
+
+
+# --- 金物・樹脂と、使い込んだ跡（1m 角。タイリングする） ---
+
+def _stretch_noise(res: int, freq_long: int, freq_short: int, seed: int) -> np.ndarray:
+    """一方向（列方向）に長く伸びたノイズ（ヘアライン・すじ）。折り返しでつながる。
+
+    行の方向は freq_long 個、列の方向は freq_short 個の格子を補間する（freq_long が小さいほど行方向に長く伸びる）。
+    """
+    rng = np.random.default_rng(seed)
+    return _interp_grid(rng.random((freq_short, freq_long)), res)
+
+
+def scratches(res: int, seed: int, count: int, length: tuple, width_px: float = 1.0) -> np.ndarray:
+    """細い引っかき傷の印（0〜1）。長さは m（1m 角に対する割合）、向きはばらばら。端は折り返してつながる。"""
+    rng = np.random.default_rng(seed)
+    mask = np.zeros((res, res))
+    for _ in range(count):
+        x0, y0 = rng.random(2) * res
+        ang = rng.random() * np.pi
+        ln = (length[0] + (length[1] - length[0]) * rng.random()) * res
+        n = max(2, int(ln))
+        t = np.linspace(0.0, 1.0, n)
+        bend = (rng.random() - 0.5) * 0.15                 # 少し弧を描く
+        xs = x0 + np.cos(ang + bend * t) * ln * t
+        ys = y0 + np.sin(ang + bend * t) * ln * t
+        strength = 0.4 + 0.6 * rng.random()
+        for k in range(int(np.ceil(width_px))):
+            mask[(ys.astype(int) + k) % res, xs.astype(int) % res] = np.maximum(
+                mask[(ys.astype(int) + k) % res, xs.astype(int) % res], strength)
+    return mask
+
+
+def brushed(res: int = 512, seed: int = 61):
+    """ヘアライン仕上げのアルミ（トラスのパイプ）。一方向のすじと、薄い擦り傷。"""
+    streak = normalize(_stretch_noise(res, 4, res // 2, seed))
+    fine = value_noise(res, res // 4, seed + 3)
+    scr = scratches(res, seed + 7, 60, (0.02, 0.08))
+    height = normalize(streak * 0.6 + fine * 0.2 - scr * 0.4)
+    shade = 0.92 + (streak - 0.5) * 0.12 + (fine - 0.5) * 0.04 + scr * 0.10
+    return mean_one(shade), height
+
+
+def powder_coat(res: int = 512, seed: int = 71, scratch_count: int = 40, scratch_gain: float = 1.6):
+    """焼付け塗装（機材の筐体・ケース・扉）。細かい柚子肌と、地の金属が少し光る擦り傷。
+
+    scratch_gain は傷の明るさ（色に掛ける倍率への足し分）。黒い塗装では 1.6 でうっすら見える。
+    明るい色に同じ値を使うと白い線が目立つので、灰色の扉などでは 0.3 程度に下げる。
+    """
+    peel = fbm(res, 64, 3, seed)
+    big = fbm(res, 4, 3, seed + 5)
+    scr = scratches(res, seed + 9, scratch_count, (0.01, 0.06))
+    height = normalize(peel * 0.7 + big * 0.1 - scr * 0.5)
+    shade = 0.95 + (peel - 0.5) * 0.10 + (big - 0.5) * 0.12 + scr * scratch_gain
+    return mean_one(shade), height
+
+
+def galvanized(res: int = 512, seed: int = 81):
+    """溶融亜鉛めっき（鉄柵・ダクト）。結晶の模様（スパングル）のまだらと、細かい凹凸。"""
+    rng = np.random.default_rng(seed)
+    cells = 32                                             # res（512・1024）を割り切る数（最後のマスが欠けて継ぎ目に線が出ない）
+    grid = rng.random((cells, cells))
+    rep = res // cells + 1
+    patches = np.kron(grid, np.ones((rep, rep)))[:res, :res]   # 角ばったまだら（結晶の粒）
+    patches = _smooth(patches, 1)
+    fine = value_noise(res, res // 4, seed + 4)
+    height = normalize(patches * 0.3 + fine * 0.7)
+    shade = 0.90 + (patches - 0.5) * 0.18 + (fine - 0.5) * 0.04
+    return mean_one(shade), height
+
+
+def rubber(res: int = 512, seed: int = 91):
+    """ゴム・樹脂（ケーブルの被覆・座席の殻・机の天板）。細かいしぼと、うっすらした汚れ。"""
+    grain = value_noise(res, res // 2, seed)
+    dirt = fbm(res, 8, 3, seed + 2)
+    height = normalize(grain)
+    shade = 0.95 + (grain - 0.5) * 0.06 + (dirt - 0.5) * 0.10
+    return mean_one(shade), height
+
+
+def wear(shade_height, seed: int, scuffs: float = 1.0, grime: float = 1.0, scratch_count: int = 120):
+    """既存の模様（明暗, 高さ）に使い込んだ跡を重ねる: 靴の擦れ（明るい楕円の帯）、薄い汚れのむら、細い傷。
+
+    1m 角で繰り返すので、目立つ大きな跡は入れない（並んで見えてしまう）。小さく数の多い跡だけにする。
+    """
+    shade, height = shade_height
+    res = shade.shape[0]
+    mean_before = float(shade.mean())
+    grime_map = fbm(res, 4, 4, seed)
+    # 擦れは、すじの模様を「まばらに出る所」だけに残す（なめらかな閾値。0/1 で切るとマス目の角が出る）
+    patch = np.clip((value_noise(res, 16, seed + 5) - 0.55) / 0.15, 0.0, 1.0)
+    scuff_map = normalize(_stretch_noise(res, 8, 32, seed + 3) * patch)
+    scr = scratches(res, seed + 7, scratch_count, (0.02, 0.12))
+    shade = shade * (1.0 - (grime_map - 0.5) * 0.25 * grime) + scuff_map * 0.10 * scuffs + scr * 0.12 * scuffs
+    height = height - scr * 0.3 * scuffs                    # 正規化し直さない（元の起伏の強さを保つ）
+    return shade * (mean_before / float(shade.mean())), height   # 平均の明るさは元のまま（擦れで全体を明るくしない）

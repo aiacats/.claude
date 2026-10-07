@@ -1,0 +1,5 @@
+makehuman_base.obj
+  出典: MakeHuman Community（https://github.com/makehumancommunity/makehuman）
+  取得元: https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj
+  ライセンス: CC0 1.0 Universal（ファイル先頭の注記、LICENSE.md の C 節）。クレジット表記は不要。
+  取得日: 2026-10-07

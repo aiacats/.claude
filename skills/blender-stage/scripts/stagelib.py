@@ -10,6 +10,7 @@ BMCP の blender_run_python から読み込んで使う。寸法は全てメー�
 from __future__ import annotations
 
 import math
+import os
 
 import bmesh
 import bpy
@@ -331,3 +332,107 @@ def audit(objects=None) -> dict:
             out["loose_verts"].append(o.name)
         out["triangles"] += sum(len(p.vertices) - 2 for p in o.data.polygons)
     return out
+
+
+# --- 大きさの基準 ---
+
+HUMAN_HEIGHT = 1.70   # 日本の成人の平均身長（男女の中間）に近い値。演者の目安として置く
+HUMAN_REF = "Ref_Human"
+# MakeHuman の基本メッシュ（CC0。出典と取得元は assets/human/LICENSE.txt）。写実的な成人の体型で、正面は -Y
+HUMAN_OBJ = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "human",
+                         "makehuman_base.obj")
+HUMAN_KEEP = {"body": "Body", "helper-l-eye": "Eye_L", "helper-r-eye": "Eye_R"}   # 補助の形（髪・歯・関節の目印）は捨てる
+
+
+def _remove_tree(name: str) -> None:
+    old = bpy.data.objects.get(name)
+    if old is None:
+        return
+    for o in [old] + list(old.children_recursive):
+        me = o.data if o.type == "MESH" else None
+        bpy.data.objects.remove(o, do_unlink=True)
+        if me is not None and me.users == 0:
+            bpy.data.meshes.remove(me)
+
+
+def human_reference(height: float = HUMAN_HEIGHT, location=(0.0, 0.0, 0.0), name: str = HUMAN_REF):
+    """大きさを比べるための等身大の人型を置く。正面は -Y（客席側）、足元の中心が location。
+
+    MakeHuman の基本メッシュ（CC0）を読み込み、体と目だけを残して身長 height に縮め、足の裏を 0 に置く。
+    書き出す階層の外（シーン直下・専用コレクション Reference）に置くので、FBX やアセット登録に混ざらない。
+    何度呼んでも置き直すだけ。メッシュのファイルが無ければ例外（別の形で代わりに置かない）。
+    """
+    if not os.path.exists(HUMAN_OBJ):
+        raise FileNotFoundError(f"人型のメッシュがありません: {HUMAN_OBJ}（assets/human/LICENSE.txt の取得元から取り直す）")
+    _remove_tree(name)
+    # 先に読み込み、体が見つかってから Empty を作る。失敗したら読み込んだ物を全部消す（途中の物を残さない）
+    before = set(bpy.data.objects)
+    try:
+        bpy.ops.wm.obj_import(filepath=HUMAN_OBJ, use_split_groups=True)
+    except Exception:
+        for o in [o for o in bpy.data.objects if o not in before]:    # 途中まで読み込んだ物を残さない
+            me = o.data
+            bpy.data.objects.remove(o, do_unlink=True)
+            if me is not None and me.users == 0:
+                bpy.data.meshes.remove(me)
+        raise
+    new = [o for o in bpy.data.objects if o not in before]
+
+    def base_name(n: str) -> str:
+        # 同じ名前が既にあると `body.001` になる。OBJ の o 行があると `<o>_<g>` になる版もあるので末尾で比べる
+        n = n.rsplit(".", 1)[0] if n[-4:-3] == "." and n[-3:].isdigit() else n
+        return next((k for k in HUMAN_KEEP if n == k or n.endswith("_" + k)), "")
+
+    keep = {}
+    for o in new:
+        part = HUMAN_KEEP.get(base_name(o.name))
+        if part is None or part in keep:
+            continue
+        keep[part] = o
+    if "Body" not in keep:
+        for o in new:
+            me = o.data
+            bpy.data.objects.remove(o, do_unlink=True)
+            if me is not None and me.users == 0:
+                bpy.data.meshes.remove(me)
+        raise RuntimeError(f"{HUMAN_OBJ} に体（グループ body）がありません")
+    for o in new:
+        if o not in keep.values():
+            me = o.data
+            bpy.data.objects.remove(o, do_unlink=True)
+            if me is not None and me.users == 0:
+                bpy.data.meshes.remove(me)
+    col = collection("Reference")
+    root = empty(name, col, display="SINGLE_ARROW", size=0.3)
+    root.location = location
+    root.rotation_euler = (0.0, 0.0, 0.0)
+    mat = bpy.data.materials.get("M_Ref_Human") or bpy.data.materials.new("M_Ref_Human")
+    mat.diffuse_color = (0.9, 0.35, 0.05, 1.0)   # 舞台の暗い色の中で目立つ橙（マネキンの色）
+    mat.use_nodes = True
+    bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    bsdf.inputs["Base Color"].default_value = mat.diffuse_color
+    bsdf.inputs["Roughness"].default_value = 0.6
+
+    bpy.context.view_layer.update()
+    body = keep["Body"]
+    vs = [body.matrix_world @ v.co for v in body.data.vertices]
+    lo = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
+    hi = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
+    k = height / (hi.z - lo.z)
+    # 足元の中心（左右と前後は外形の中央、高さは足の裏）を原点に、身長を height に
+    base = Vector(((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, lo.z))
+    for part, o in keep.items():
+        mw = o.matrix_world.copy()
+        o.data.transform(Matrix.Diagonal((k, k, k, 1.0)) @ Matrix.Translation(-base) @ mw)
+        o.matrix_world = Matrix.Identity(4)
+        o.name = o.data.name = f"{name}_{part}"
+        o.data.materials.clear()
+        o.data.materials.append(mat)
+        for poly in o.data.polygons:
+            poly.use_smooth = True
+        for c in list(o.users_collection):
+            c.objects.unlink(o)
+        col.objects.link(o)
+        parent_to(o, root, world_authored=False)
+    bpy.context.view_layer.update()
+    return root
