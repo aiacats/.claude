@@ -89,6 +89,9 @@ importlib.reload(S); importlib.reload(T)
   別セッションも使っている。書き出しの検証は `scripts/check_fbx.py` を**別プロセスの Blender** で走らせる。
   成果物のパスを報告する前に、`git log` とファイルの更新時刻で**他のセッションが書き換えていないか**を見る
   （band_studio では、報告した FBX を別セッションが修正版で上書きしていた）。
+- **円筒を 6〜8 角の平らな陰影のまま出さない**（2026-10-08「全体的に粗い」）。分割数は半径から決め（弦と円弧のずれ 0.5mm 以内）、
+  メッシュは滑らかな陰影にして 30° を超える角だけ折る（`mesh.shade_smooth()` + `mesh.set_sharp_from_angle()`。FBX の EDGE でそのまま出る）。
+  箱の部品にも細い面取り（3mm・1 段）を掛ける。実装例は `BlenderScenes/scripts/live_parts.py` の `cyl_segments` と `Shape.to_object`。
 - **ライブ会場・ステージ・舞台セットは skill live-venue も呼ぶ**（幕の作り、会場の既定の作り、LED・アレイ・吊り物の施工、品質の基準、点検と撮影のスクリプトはそちら）。
 - **部品を「置き場所の式」だけで並べると、支えの無い部品が空中に浮く**（2026-10-07 band_studio）。
   症状: Unity で、シンバルスタンドのブームの後ろの黒ゴム（カウンターウェイト）が宙に浮いていた。
