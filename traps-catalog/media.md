@@ -270,3 +270,23 @@ OBS・ffmpeg・コーデック・映像/音声の取り込みと時刻・動画/
 - skill vortex-timeline-export に記載（罠 10・12。原因は未確定。止まったら Unity と OBS を閉じて PC を再起動）。
 - 実例: 2026-09-26〜27 SinkaiFes2026
 - 出典: skills/vortex-timeline-export/SKILL.md 罠 10・12, SinkaiFes2026/log/claudeLog.txt:909-917
+
+### NVENC の CQ と CRF の対応は素材で変わる
+- 症状: 「CRF 18 ↔ CQ 23」（2026-09 ftpDeck の実測）を当てはめたら、暗い背景にグラデーションと光の CG（ライブの書き出し）で SSIM が明らかに低かった。
+- 原因: NVENC の CQ と x264 / x265 の CRF は尺度が違い、対応は素材の性質（暗部・グラデーション・ノイズ）で変わる。
+- 対策: 書き出す素材に近いもので SSIM を測って決める。AutoLive（1280x720 のステージ）では x264 CRF 18 ↔ h264_nvenc CQ 12、x265 CRF 23 ↔ hevc_nvenc CQ 20。同じ画質で NVENC のファイルは 5〜8 倍。
+- 実例: 2026-10-09 AutoLive（apps/autolive/src/export/ffmpeg.rs）
+
+### 映像を標準入力から流すと -shortest が効かず、音が最後まで残る
+- 症状: 生の RGBA を標準入力へ流し、曲を 2 本目の入力にして `-af apad -shortest` を付けたのに、1.5 秒の映像に 3.09 秒の音が入った（終了コード 0）。
+- 原因: 標準入力（rawvideo）の映像では -shortest が音の側を切らなかった（ffmpeg 7.1 で実測）。apad で音が無限になるので、むしろ伸びる。
+- 対策: 長さを式で決める。`-af apad=whole_dur=<フレーム数/fps>` と出力の `-t <同じ秒>`。範囲の頭は入力の前の `-ss`（PCM ならサンプル単位で合う）。曲の終わりを越えても無音で埋まる。テストは音の頭の位置と長さを ffprobe・デコードで見る。
+- 実例: 2026-10-11 AutoLive（apps/autolive/src/export/ffmpeg.rs、tests/render_cli.rs）
+
+### Demucs（htdemucs）で分けた歌声は 44.1 kHz になる
+- 症状: 48 kHz の 2Mix から分けた vocals.wav を 48 kHz として読んだら、表情の記録の口と並べたグラフが後ろほどずれた。
+- 原因: htdemucs のモデルは 44.1 kHz で、出力は入力の周波数によらず 44.1 kHz で書かれる。
+- 対策: 周波数はファイルから読む（soundfile.info・ffprobe）。skill vortex-timeline-setup の `facial_gate.py` は ffprobe で読む。
+- 実例: 2026-10-16 SinkaiFes2026（AZKi の 2Mix_AzKi_08.wav 48 kHz → vocals.wav 44.1 kHz・PCM_24）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-16 00:30

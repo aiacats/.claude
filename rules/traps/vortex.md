@@ -36,3 +36,12 @@ CameraRecordOverrideTrack が効かない。原因は Timeline が上から評�
 
 ### リロードだけで出る改行差分をコミットしない
 git に M が出るが中身の差分が無い。原因はドメインリロードで Crest の hlsl と codecoverage の Settings.json が再生成されること。→ リロード由来と報告し、コミットに含めない。（実例: 2026-09-14 Ext_Palletproject）
+
+### ビルドでだけ全灯体が DMX に無反応
+Editor では動くのにビルドで何も光らない（受信は開いている・エラーなし）。原因は submodule 版 VirtualFixture がモードを RefleshAttributeList の 2 回目で組み、ビルドでは OnValidate が無く 1 回しか呼ばれないこと。→ Start で `_profileState = Exist` にしてから呼ぶ（339876fc）。確認は `~/.claude/tools/artnet-send.py` で Art-Net を送り画面の輝度を比べる。（実例: 2026-10-01 SinkaiFes2026）
+
+### 灯体が Art-Net に反応しないなら MetaDmxReceiver の Use Timeline を見る
+受信は開いていてパケットも届くのに灯体が変化しない（エラーなし）。原因は DMX Timeline のプレビュー後に Use Timeline: On のまま保存され、ライブ受信を流さないこと。→ LightControler の Use Timeline を Off にして保存。Submod mao/dev2 77e0a457 以降は手動のチェックだけで決まる。（実例: 2026-10-05 vortex_urp）
+
+### カメラ記録の再生で一部のカメラだけ真っ黒
+番組カメラが原点・画角 0 になる（エラーなし）。原因は記録のカーブが「番号_収録時のカメラ名」で、再生側（CameraRecordSampler）は今のシーンのスイッチャーの並びと名前で当てること（収録後に並びや名前が変わった番号が外れる）。→ 記録の .anim のカーブ名とシーンの `_inputCameras` の並び・名前を比べ、シーン側を記録に合わせる（位置・向き・画角は記録の値なので、名前さえ合えばどの chief でもよい）。名前で当てる再生側の修正案は SinkaiFes2026_Media/camera-record-names.patch（未採用）。照合は skill vortex-timeline-setup の `camrec.py order`。並びを変えたら全組を照合する（MZM に合わせたらみなとんが黒くなった）。（実例: 2026-10-12 / 2026-10-15 SinkaiFes2026）

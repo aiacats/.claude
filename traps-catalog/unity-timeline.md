@@ -106,6 +106,47 @@ Timeline・PlayableDirector・PlayableGraph・Recorder・Cinemachine の罠の�
 - 自動検出: 不可
 - 出典: VL:657-663
 
+### Foot IK On の収録モーションで、膝が 2〜4 フレームだけ反った側へ跳ねる（Foot IK を切ると常に反る）
+- 症状: Timeline の Humanoid クリップを Foot IK On で流すと、膝が 1 コマで 7〜13 cm 動き、2〜4 フレーム後に戻る（膝の向きが反対へ入れ替わる）。Foot IK Off にすると跳ねは消えるが、膝が常に 5〜14° 反る（逆折れ）。股関節・足首は滑らかで、膝だけが動く。
+- 原因: クリップの膝のマッスル（`Left/Right Lower Leg Stretch`）が正規の範囲 −1〜1 を超えている（1.1〜1.26）。マッスル 1 がほぼ伸び切り（春猿火のアバターで 0.9°、膝の角度 = −80 × マッスル + 80.9°）で、超えた分だけ FK の膝が反る。Foot IK は普段は前へ曲げ直すが、FK が反っているフレームの一部で反った側の解を選ぶ。「伸び切りで向きが決まらない」だけではない（IK が選ぶ膝の曲がりは 13〜22° ある）。
+- 対策: Foot IK を切らずに、クリップの膝のマッスルを 1 以下に抑える（複製のカーブを `AnimationUtility.SetEditorCurve`）。春猿火で跳ね 135 mm → 17 mm、逆折れ 0、足首・つま先の位置の差 0.1 mm 以下、膝も跳ねたコマ以外は p99 で 2 mm 以内。確かめ方は、Timeline を 1/60 秒ずつ Evaluate して膝の加速度（2 階差分）のうち股関節・足首のどちらよりも大きい分を数える（8 mm 以上を候補）。マッスルの値は `AnimationUtility.GetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Animator), "Left Lower Leg Stretch"))`。
+- 実例: 2026-10-14 SinkaiFes2026（春猿火 左 34%・右 9% が 1 超え、MZM の Anjo 右 65%・Kosaka 右 最大 1.26。どれも先に Foot IK Off で凌いでいた）
+- 自動検出: 不可（クリップのマッスルの最大値を読めば分かる）
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-14 16:00 の節
+
+### 2 人以上の収録モーションで Remove Start Offset が On だと、2 人が舞台の中央で重なる
+- 症状: 同じ収録の 2 人の Animation Track を並べると、番組では左右に分かれて立っているのに、Timeline では 2 人とも中央に重なる。
+- 原因: AnimationPlayableAsset の Remove Start Offset（既定 On）が、クリップの最初のルートの位置・向きを打ち消して原点から始める。
+- 対策: 複数人のクリップは Remove Start Offset を Off（収録の座標のまま）。FBX の取り込みでも keepOriginalOrientation / PositionXZ / PositionY を On にする（traps-catalog/unity-import.md「複数人の収録モーション…」）。`tl_dump.py`（skill vortex-timeline-setup）で RemoveStartOffset を一覧できる。
+- 実例: 2026-10-14 SinkaiFes2026（MZM の Anjo・Kosaka）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-14 01:40・04:35
+
+### .playable.meta の GUID が変わり、シーンから Timeline の参照が切れる
+- 症状: シーンの PlayableDirector の Playable が空（Missing）になり、Timeline ウィンドウでも組の Timeline が出ない。.playable 自体は残っている。
+- 原因: 作業ツリーで .playable.meta（とシーンの .meta）の GUID が作り直されていた。いつ・何が作り直したかは未特定（.meta を消した状態で Unity が開いた、ファイルを外から置き直した等が考えられる）。
+- 対策: `git diff` で .meta の guid の行を見て、コミット時の GUID に戻す（`git checkout -- <.meta>`）。戻す前の差分は控える。Timeline・シーンを他の PC で開いたら、まず `git status` で .meta が変わっていないかを見る。
+- 実例: 2026-10-14 SinkaiFes2026（4 組の Timeline と ShinkaiFes2026_Timeline.unity.meta）
+- 自動検出: 候補（.meta の guid 行の変更を warn）
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-14 00:10
+
+### Edit モードの Director では、Pause / Stop の通知（OnBehaviourPause・OnPlayableDestroy）がミキサーに届かない
+- 症状: 自作トラックのミキサーで「一時停止・停止で元の値に戻す」を EditMode テストで確かめると、何度やっても戻らない（Play では戻る）。
+- 原因: Edit モードで PlayableDirector を Evaluate しても、Play（Manual の時間）してから Pause / Stop しても、ScriptPlayable のミキサーに OnBehaviourPause・OnPlayableDestroy・OnGraphStop が呼ばれなかった（ProcessFrame だけ）。手で組んだ PlayableGraph でも同じ。
+- 対策: 区間・Ease・入り直しなどは EditMode テストで Director を Evaluate して確かめ、一時停止・停止の戻りは Play で確かめる（PlayMode テストにするか、手で確かめて記録を残す）。手で組んだグラフより Director で評価する方が、クリップの区間と Ease の重みの曲線が実際どおりになる。
+- 実例: 2026-10-15 SinkaiFes2026（LightIntensityTrack。Play では区間の中の Pause で 0 → 1 に戻った）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-15 22:55
+
+### Timeline を動かした直後に Render すると、キャラだけ前の時刻のポーズで写る
+- 症状: `director.time = t; Evaluate(); camera.Render()` を時刻を変えながら続けて撮ると、カメラの位置と向きはその時刻なのに、キャラの腕・脚が 1 枚前の時刻の形。番組映像と並べると「めちゃくちゃずれている」。
+- 原因: スキンメッシュの形は次のコマのプレイヤーループで更新される（Evaluate では骨だけ動く）。カメラの値は書いた時点で効くので、画の中で食い違う。
+- 対策: 時刻を合わせたら、その時刻のまま数コマ回して（毎コマ time を戻して Evaluate）`WaitForEndOfFrame` で撮る。撮った画のポーズが参照映像と一致するかを最初の 1 枚で確かめる。
+  雛形は skill vortex-timeline-setup の `templates/ShotRunner.cs`（3 コマ回してから撮る）。
+- 実例: 2026-10-16 SinkaiFes2026（AZKi の Cam14 の構図合わせで補正量を 2 回誤った。ユーザーに指摘された）。CLAUDE.md の「LateUpdate 中に Render するとスキンメッシュが前フレーム」と同根。
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-16 00:30
+
 ### 他分野・skill に置いたもの
 - Edit モードの PlayableGraph は Humanoid の骨に書かない → traps-catalog/unity-runtime.md
 - DmxClip は Looping を持たない（ループは wrapMode=Loop）／キャラ別 Timeline の Play On Awake が DMX を取り合う／DmxMixerBehaviour.OnGraphStart で実受信が止まる／RT_Output を誰も書かない → skill vortex-timeline-setup・vortex-timeline-export に記載（コード修正の経緯は traps-catalog/vortex.md）

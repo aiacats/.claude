@@ -28,3 +28,12 @@ Loop の Timeline を無限に録る、「失敗 0 件」なのにフレーム�
 
 ### Cinemachine 2 の Brain はレイヤーで候補を絞る
 vcam を足すと PGM / PRV を奪う、または拾われない。原因は vcam のレイヤーと出力カメラの cullingMask で候補が絞られること。→ 番組外のカメラは専用レイヤーか Priority 0 にする。（実例: 2026-08 vortex_urp）
+
+### Foot IK On で膝が数フレームだけ反対へ跳ねる
+Foot IK Off で跳ねは消えるが膝が常に反る。原因はクリップの膝のマッスル（Lower Leg Stretch）が上限 1 を超え、FK の膝が逆折れしていること（IK がときどき反った側の解を選ぶ）。→ Foot IK を切らず、マッスルを 1 以下に抑える。まずクリップのマッスルの最大値を読む。（実例: 2026-10-14 SinkaiFes2026 春猿火・MZM）
+
+### 2 人以上の収録モーションは Remove Start Offset を Off
+On（既定）だと 2 人とも舞台の中央に重なる（エラーなし）。原因はクリップの最初のルートを打ち消して原点から始めること。→ 複数人のクリップは Off、FBX は keepOriginal*。（実例: 2026-10-14 SinkaiFes2026 MZM）
+
+### Timeline を動かした直後に撮ると、キャラだけ前の時刻のポーズ
+カメラの位置・向きはその時刻なのに、キャラの腕・脚が 1 枚前の時刻の形で写る（エラーなし）。原因はスキンメッシュの形が次のコマで更新されること（Evaluate では骨だけ動く）。→ その時刻のまま数コマ回して `WaitForEndOfFrame` で撮る（skill vortex-timeline-setup の `ShotRunner.cs`）。最初の 1 枚を参照映像と並べて確かめる。（実例: 2026-10-16 SinkaiFes2026）

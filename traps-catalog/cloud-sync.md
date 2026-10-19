@@ -114,3 +114,9 @@ rclone・Google Drive（rclone の `gdrive:` / `gdrive-ro:` と Drive MCP）・D
 - skill deliver-artifact に記載（スクリプト側で元の拡張子と日付を補うよう修正済み）。
 - 実例: 2026-09-24
 - 出典: skills/deliver-artifact/SKILL.md「名前と掃除」, CLAUDE.md「踏んだ罠はその場で反映する」
+
+### Dropbox の共有フォルダ内のファイルを範囲読みすると、本体が返らない
+- 症状: `sharing/get_shared_link_file` に Range を付けると 206 と Content-Length は 1 秒で返るが、本体が 1 バイトも来ないまま 120 秒でタイムアウトする（大きな mov、56〜246GB で再現）。共有フォルダの URL にパスを足した `.../scl/fo/<id>/<key>/<path>?dl=1` は HTML が返るだけ。ffprobe は moov を読めず止まる。
+- 原因: 未特定（Dropbox 側。単体ファイルの共有リンク `scl/fi/...&dl=1` なら AZKi のとき範囲読みできていた）。
+- 対策: `sharing/get_shared_link_metadata`（url + フォルダ内のパス）でそのファイル単体の URL を得て、末尾を dl=1 にして ffmpeg の `-ss` で読む（奥の位置も数秒。2026-10-14 HyperDeck・2026-10-15 きまゆの OBS で確認）。skill vortex-timeline-setup の `dbx_shared.py url`。サブパスは先頭の / 無しで渡す（Git Bash で MSYS_NO_PATHCONV=1 を付けると、スクリプト自体の /c/... のパスも変換されず起動できない）。以前の対策（単体の共有リンクを出してもらう・軽い書き出しを用意してもらう）は不要になった。一覧とファイルの取得（全体）は同じ API で問題なく動く。Git Bash から `/フォルダ` を渡すときは MSYS_NO_PATHCONV=1。
+- 実例: 2026-10-14 SinkaiFes2026（HyperDeck_SWMain の mov）

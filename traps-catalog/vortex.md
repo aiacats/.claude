@@ -114,7 +114,7 @@ vortex 系ライブ案件（Submod_RealtimeLiveUtility / Submod_RealtimeLighting
 - 症状: 一部チャンネルだけ送る卓で、隣の領域や前のパケットの残骸を読む（unsafe なので例外にならない）。
 - 原因: ArtNetPacketUtillity.GetDmx が受信長を見ず dst.Length ぶん MemCpy していた。
 - 対策: srcLength を渡し、届いた分だけ写す（修正済み 273d8be。他案件の submodule は要確認）。
-- 実例: 2026-08-24 2609SuiseiTour26
+- 実例: 2026-08-24 2609SuiseiTour26 / 2026-09-30 vortex_urp の submodule（Submod_RealtimeLiveUtility e5942ee2 で修正）
 - 自動検出: 不可
 - 出典: 2609-LOG:1677-1683
 
@@ -262,7 +262,8 @@ vortex 系ライブ案件（Submod_RealtimeLiveUtility / Submod_RealtimeLighting
 - 症状: CameraRecordOverrideTrack のオフセットが効かない。
 - 原因: Timeline はトラックを上から順に評価する。上に置くと下の CameraRecordTrack の記録値で上書きされる。
 - 対策: Override トラックは CameraRecordTrack より下に置く。
-- 実例: 2026-08-20 vortex_urp
+  カメラごとに 1 本・全尺 1 クリップにする。同じトラックにクリップを重ねるとブレンドされ、重みが割れて片方ずつしか効かない（2026-10-12 SinkaiFes2026）。
+- 実例: 2026-08-20 vortex_urp / 2026-10-12 SinkaiFes2026
 - 自動検出: 不可
 - 出典: VL:580-582
 
@@ -377,3 +378,106 @@ vortex 系ライブ案件（Submod_RealtimeLiveUtility / Submod_RealtimeLighting
 
 ---
 出典の略記: 2609-LOG = D:\_ProjectBLUE\Project\2609SuiseiTour26\log\claudeLog.txt / SINKAI-LOG = D:\_ProjectBLUE\Project\SinkaiFes2026\log\claudeLog.txt / VL = D:\_ProjectBLUE\Project\_vortex\vortex_urp\log\claudeLog.txt / SL = D:\_ProjectBLUE\Project\_vortex\Submod_RealtimeLiveUtility\Submod_RealtimeLiveUtility\.claude\claudeLog.txt / TS = D:\_ProjectBLUE\Project\Ext_TokinoSora_2026-pia\log\claudeLog.txt / PL = D:\_ProjectBLUE\Project\Ext_Palletproject\log\claudeLog.txt / AL = D:\_ProjectBLUE\Project\_thirdParty\Unity_ArtNetRecorder\log\claudeLog.txt / LMR-LOG = D:\_ProjectBLUE\Project\LiveMultiRecorder\.claude\claudeLog.txt / LLL-LOG = D:\_ProjectBLUE\Project\lll-12\log\claudeLog.txt / KMT-LOG = D:\_ProjectBLUE\Project\EXT_Kamitsubaki_Composite\EXT_Kamitsubaki_Composite\.claude\claudeLog.txt / M:<name> = C:\Users\komao\.claude\projects\<name>\memory
+
+### ビルドでだけ全灯体が DMX に無反応（submodule 版 VirtualFixture の ProfileState）
+- 症状: Editor の Play では灯体が動くのに、ビルドでは Art-Net を受けても何も光らない。受信は開いている（netstat で 6454 を待ち受け）、エラーも出ない。
+- 原因: `VirtualFixture.RefleshAttributeList` は 1 回目は `_profileState` を NotExist→Exist にするだけで、モード（`_funcList`）を組むのは 2 回目。Editor は OnValidate + Start で 2 回呼ぶが、ビルドは OnValidate が呼ばれず Start の 1 回だけ。
+- 対策: Start で `if (_profile != null) _profileState = ProfileState.Exist;` してから RefleshAttributeList（Submod_RealtimeLiveUtility 339876fc）。2609SuiseiTour26 版は ProfileState 自体を無くしてある。他案件の submodule は要確認。
+  確かめ方: ビルドを窓で起動 → `python ~/.claude/tools/artnet-send.py 127.0.0.1 6 255 8` → 送信前後の画面の平均輝度を比べる。
+- 実例: 2026-10-01 SinkaiFes2026（修正前 127.4→127.5、修正後 127.3→162.0）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-01 23:35 / 2026-10-02 00:55
+
+### MetaDmxReceiver の Use Timeline が On のまま保存され、ビルドで灯体が Art-Net に反応しない
+- 症状: exe は 6454 を開いてパケットも届いているのに、灯体がまったく変化しない（エラーなし）。
+- 原因: DMX の Timeline を再生すると DmxMixerBehaviour.OnGraphStart が IsTimeline(true) にし、戻していなかった。Editor でプレビューした後にシーンを保存すると Use Timeline: On が残り、Update がライブの Art-Net を流さない。
+- 対策: Use Timeline は手動のチェックだけで決める形に直した（Submod mao/dev2 77e0a457。IsTimeline を削除、Off のときは Timeline の値も流さない）。古いサブモジュールの案件では、シーンの LightControler の Use Timeline を Off にして保存する。
+- 実例: 2026-10-05 vortex_urp（ANIMAX の 4 面照明確認ビルド）
+- 自動検出: 不可
+- 出典: vortex_urp/log/claudeLog.txt 2026-10-05
+
+### Play 直後のドメインリロードで Art-Net の受信が閉じる
+- 症状: Play 中なのに 6454 を誰も開いていない（`ReceiveDmxTaskRun` は出ている）。送っても灯体が変わらない。
+- 原因: スクリプト変更直後に Play すると、保留の再コンパイルが Play 中に走り、ドメインリロードで受信のソケットが失われる。Start はやり直されない。
+- 対策: コンパイルの完了を待ってから Play し、`netstat -ano -p UDP | grep :6454` で開いているのを確かめてから送る。開いていなければ Play に入り直す。
+- 実例: 2026-10-05 vortex_urp
+- 自動検出: 不可
+- 出典: vortex_urp/log/claudeLog.txt 2026-10-05
+
+### カメラ記録を再生すると一部のカメラだけ真っ黒（スイッチャーの並びが収録時と違う）
+- 症状: CameraRecordTrack / Player_camera で記録を再生すると、特定の番号のカメラが番組に出る区間だけ SW 画面が真っ黒（番組カメラが位置 (0,0,0)・画角 0）。エラーも警告も出ない。Timeline のクリップのラベルは収録時の名前（例「14_Cam3FF sub」）で出るので気付きにくい。
+- 原因: 記録 .anim のカーブパスは「Cameras/<収録時の番号>_<収録時のカメラ名>」。CameraRecordSampler はリグのノード名を「今のシーンのスイッチャーの並びと名前」で作るので、並びや名前が収録後に変わった番号はカーブが当たらず、ノードの既定値（原点・CameraRecordFov.fov = 0）が番組カメラに入る。
+- 対策: シーンのスイッチャーの並びと名前を記録に合わせる（番組カメラの位置・向き・画角は記録の値なので、名前さえ合えばどの chief でもよい。シーンに無い名前は空いている chief の名前を変えて充てる）。
+  1 つのシーンで並びの違う記録を複数使うなら、再生側を名前で当てる修正が要る（CameraRecordClip に収録時の並びを持たせる案を作ったが未採用。差分は SinkaiFes2026_Media/camera-record-names.patch。Inspector の番号表示とオフセットの番号の意味も合わせて直す必要がある）。
+  確かめ方: skill vortex-timeline-setup の `camrec.py order <anim> <scene>`（番号ごとに OK / NG）と `camrec.py segments --ids`（黒くなる区間と秒数）。Play で番組カメラの位置・画角を読む。SW 画面は Display 3（Display 1 は黒のままで関係ない）。
+- 実例: 2026-10-12 SinkaiFes2026（test_Azuki、シーンの 13/15 番を収録時の並びへ）/ 2026-10-15 SinkaiFes2026（Yamashita の MZM、13・14 番が 43 か所・計 183 秒黒 → シーンの 13・14 番を MZM の記録の並びへ、e7c9290a）/ 同日、その並びでみなとんの 13・14 番が 22 か所・134 秒黒くなり、ユーザーの指示で元の並びへ戻した（45d15938。MZM が再び黒）→ さらに MZM 用へ戻した（e153fab7）。並びを変えたら全組を照合する
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-12 / 2026-10-15
+
+### カメラ記録の切り替えは activeId ではなく fade に出る（番組のカットと activeId を比べても合わない）
+- 症状: 番組映像（HyperDeck・SW の mov）のカットの時刻と、カメラ記録の activeId が変わる時刻を突き合わせても、ずれがばらついて合わない。
+- 原因: 番組の切り替えは fade（0→1 で PGM と PRV が入れ替わる）に入る。瞬時のカットは fade が 1 キーで 0↔1 に跳び、ディゾルブは約 1 秒かけて動く。activeId は入れ替えの前後で PRV 側に次のカメラを仕込むために変わる。
+- 対策: fade の跳び（前後のキーの中点）を記録の切り替えとして、映像のカットと突き合わせる。ディゾルブは映像の差分で拾えないので数えない。
+  番組のカットは記録の切り替えより約 0.1 秒早かった（MZM −0.095・春猿火 −0.130・りのん −0.095）→ カメラのクリップをその分前へ置く。
+  道具: skill vortex-timeline-setup の `camrec.py match`（窓ごとに音で映像 → Timeline を測り、カットと fade を突き合わせ、clipIn・timeScale を出す）。
+- 実例: 2026-10-12 SinkaiFes2026（AZKi: ClipIn 1.6157・timeScale 1.0000356、15 カットで最大 15.8 ms）/ 2026-10-14（4 組）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-12 19:20・2026-10-14 01:40
+
+### 表情の記録は、口が音より遅れて記録される（0.3〜0.6 秒）
+- 症状: 収録時の表情（VRMBlendShapeTrack）を 2Mix と同じ位置に置くと、口パクが歌より遅れる。
+- 原因: 未特定（リップシンクの処理の遅れが記録に乗っている）。AZKi で 0.56 秒、春猿火で約 0.28 秒。組・キャラで違う。
+- 対策: 表情のクリップの ClipIn で前へずらす。量は口（A・I・U・E・O の合計）と 2Mix の包絡の相互相関で測る（skill vortex-timeline-setup の `sync.py mouth`）。2 人で 1 本の 2Mix なら 2 人の口を足して合わせる。
+- 実例: 2026-10-12 SinkaiFes2026（AZKi・エルセ ClipIn 0.56）/ 2026-10-14（春猿火 0.28、未反映）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-12 06:50・2026-10-14 00:10
+
+### ライトを Animation Track で動かすと、書き出しの Solo が他の組でライトの置き場ごと無効にする
+- 症状: 1 つのシーンに組ごとの Timeline を並べ、Timeline Exporter の Batch を Solo で書き出すと、別の組の書き出しで照明がまるごと消える（ありうる。実際には踏む前に避けた）。
+- 原因: ExportSolo は「Animation Track のバインド先」をその組のキャラとみなし、他の組を書き出すときに無効にする。無効にする範囲は、書き出す側の物を含まない限り、シーン直下の手前の親まで遡る（`Lighting (2)/Base/Character Directional Light` なら `Lighting (2)` ごと）。
+- 対策: ライトの値を Timeline で動かすときは Animation Track を使わず、Light をバインドする専用トラック（サブモジュールの LightIntensityTrack）にする。Activation Track も、他の組の物は Solo で消される（意図した仕様）。
+- 実例: 2026-10-15 SinkaiFes2026（MZM のキャラ用ライトを暗転から明点させる方法を選ぶとき、ExportSolo.cs を読んで分かった）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-15 22:55
+
+### カメラ記録の再生で、カメラがキャラに張り付いて回る（リニア感が強い）のは、収録時の追従のまま
+- 症状: 記録を再生した番組で、パンがキャラに張り付いて動き「リニア感が強い・イージング感が気持ち悪い」（AZKi だけ。他の組では感じない）。記録の粗さ・タンジェント・再生の補間を疑いやすい。
+- 原因: 再生は記録の位置・向きを毎コマ書き戻すだけで、追従を計算し直さない。収録時のシーンで注視の減衰（Aim Damping）が 0 のカメラ（AZKi の 9・10・12 番）は、ライブでもキャラに遅れなく張り付いて回っていて、それが記録されている。記録は 75 キー/秒、値が動くのにタンジェント 0 のキーは 0%。
+- 対策: まず `CamFollowProbe.DumpLookat` で Aim Damping を、`camfollow.py lag` で遅れと画面の揺れを測り（skill vortex-timeline-setup）、記録どおりであることを示してから、直すかをユーザーに聞く。
+  直すなら再生側で追うカメラだけに遅れを足す（Follow Lag を作ったが、ユーザーの判断で戻した。サブモジュールの stash「Follow Lag（ユーザー指示で戻した 2026-10-16）」）。
+- 実例: 2026-10-16 SinkaiFes2026（AZKi）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-16 00:30・01:50
+
+### 注視先の番号のキャラがいないカメラは向きが止まり、記録にもそのまま残る
+- 症状: 記録を再生した番組で、あるショットの間カメラの向きがまったく動かず、キャラが画面の外（AZKi 19:37 の 14 番、2.6 秒。番組映像では寄りでキャラが写っている）。切り替えの時刻は番組と合っている。
+- 原因: そのカメラ（Cam3 FF 2）の注視先の番号が 4 で、AZKi 一人の間はその番号のキャラがいない。注視先が無いカメラは向きが動かず、収録時もそのまま記録された（ショットの間の向きの変化 0.00°）。
+- 対策: `CamFollowProbe.Measure` → `camfollow.py offframe` で、キャラが画面の外・向きの変化 0° のショットを全編から探す（skill vortex-timeline-setup）。
+  区間だけ向きをずらす Override Track（`CamFollowProbe.SetRotationOverride`）で直し、量は番組映像の同じコマと並べて決める。Remove Start Offset を切り替えても直らない。
+- 実例: 2026-10-16 SinkaiFes2026（AZKi、1177.0〜1179.9 秒 yaw −4.1°。0〜1309 秒でこの 1 つだけ）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-16 00:30・01:50
+
+### LightDimmerTrack（LightEmissionDimmerControl）は、DMX が色を書く灯体の色を消す
+- 症状: DMX の灯体（VF_DRGB のキャラ用ライトなど）に LightDimmerTrack で暗転を重ねると、DMX の色の変化が効かなくなる（コードを読んで分かった。実際には使わなかった）。
+- 原因: LightEmissionDimmerControl は Play 開始時の色 × 明るさで、色を毎フレーム書き戻す。DMX の灯体も Light の色を書くので取り合う。
+- 対策: DMX の灯体の上から暗転・明点を重ねるなら、強さ（intensity）に倍率を掛ける LightIntensityTrack（サブモジュール mao/light-intensity-track）。VF_DRGB は色だけを書き、強さは触らないので取り合わない。
+  LightDimmerTrack は DMX が無い組の明暗転（きまゆ）に使う。
+- 実例: 2026-10-15 SinkaiFes2026（MZM のキャラ用ライト）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-15 22:55
+
+### 同じカメラの Camera Record Override を 2 本のトラックに置くと、重なる区間では後の 1 本だけが効く
+- 症状: 全尺のレールの Override があるカメラに、区間だけ向きを直す Override を別のトラックで足すと、その区間だけレール・FoV のずれが消える（と読める。実機では未確認）。
+- 原因: CameraRecordOverrideTrack のミキサーは、自分のトラックのクリップだけを合成し、「記録値 + そのオフセット」でカメラの位置・向き・FoV を上書きする（ApplyToBrain）。トラックをまたいで足し合わせないので、後に評価されたトラックが勝つ。
+- 対策: 同じカメラの Override は 1 本のトラックにまとめるか、区間のクリップにもそのカメラのレール・FoV の値を入れる（skill vortex-timeline-setup の `CamFollowProbe.SetRotationOverride` は、重なる全尺のクリップから写し、位置・回転を持つ物と重なるなら断る）。
+- 実例: 2026-10-19 レビューでコードから見つけた（AZKi の Cam14 はレールの Override が無かったので影響なし）
+- 自動検出: 不可
+- 出典: Submod_RealtimeLiveUtility の Script/Runtime/CameraSwitcher/Recorder/CameraRecordOverrideTrack.cs 74〜102 行
+
+### リオナ（Holo のモデル）の星目が衣装によって出ない
+- 症状: Star（_063_eye_kirakira=100）を当てても星が出ず、普段のハイライトのまま。形状の重み・メッシュ・テクスチャは星が出る衣装と同じ。
+- 原因: 瞳のマテリアル（MT_Riona_Eye_L/R_NS/EM）の HoloToon の `_HTO_CLIPPING` が 0 で、瞳の後ろから出る星（EyeEx）を覆う。古い版（hts 0.7.1）で作られたマテリアルに多い。
+- 対策: 瞳の `_HTO_CLIPPING` を 1。切り分けは「出る衣装の顔マテリアル一式に差し替える → 半分ずつ戻す」が早い（描画順や Z を 1 つずつ変えても当たらなかった）。
+- 実例: 2026-10-19 Ext_TokinoSora_2026-pia（CH10080_U001_1_2）
+- 出典: 実測
