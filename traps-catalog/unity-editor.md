@@ -406,3 +406,12 @@ Editor 拡張・AssetDatabase・ドメインリロード・Editor の起動/終�
 - 実例: 2026-10-19 SinkaiFes2026（Scripts/Editor/ShaderWarmupOnPlay.cs・Shaders/ShinkaiFes2026.shadervariants）
 - 自動検出: 不可
 - 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-19
+
+### 生成物を仕上げてから RegisterCreatedObjectUndo すると、Redo で他の物からの参照が壊れる
+- 症状: Editor の道具でキャラを生成 → 配線（uOscServer の永続リスナー・CharacterActivator の登録は Undo.RecordObject）→ 最後に RegisterCreatedObjectUndo。Undo は全部戻るが、Redo の後に OSC のリスナーの宛先が「Object @ キャラ名」（型の無い参照）になる。
+- 原因: 同じ Undo グループの中で、記録した順に戻される。生成の記録が最後だと、Redo で配線先（サーバー）の値がキャラより先に戻り、まだ無いコンポーネントを指したまま残る。
+- 対策: 生成の直後に `RegisterCreatedObjectUndo`、続けて `RegisterFullObjectHierarchyUndo`（以降の素の書き込みが flush で生成直後の姿に戻らないように）。グループは `IncrementCurrentGroup` → 最後に `CollapseUndoOperations`、失敗は `RevertAllDownToGroup`。
+  確かめ方: 道具を流す → Inspect（参照の一覧）→ Undo → 前と一致 → Redo → 流した直後と一致 → 保存して開き直し → 一致。
+- 実例: 2026-10-19 SinkaiFes2026（vortex-character-setup の SetupCharacterEx）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-19
