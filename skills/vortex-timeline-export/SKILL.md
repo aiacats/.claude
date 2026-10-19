@@ -38,6 +38,9 @@ Unity Recorder での書き出しは、画面が使えないときの代わり�
 2. **MCP の接続先**。`Library/ClaudeCodeMCP/endpoint.json` の `processId` が今の Unity か。
    別プロジェクトの Unity と 8090/8091 を分け合っていることがある。Unity を起動し直すと入れ替わる。
 3. Unity・OBS は**メインのデスクトップ**で動かす（ユーザー指示 2026-09-27。仮想デスクトップでも録れたが既定はメイン）。
+4. **DMX の Timeline を照明に乗せるなら、`MetaDmxReceiver`（LightControler）の Use Timeline が On か**。
+   2026-10-05 以降（Submod mao/dev2 77e0a457〜）は手動のチェックだけで決まり、再生しても自動では切り替わらない。
+   Off のまま録ると照明の無い動画になる。録り終えたら元の値に戻す。
 
 ## 1. 録る Display と解像度を決める
 
@@ -60,6 +63,9 @@ Unity Recorder での書き出しは、画面が使えないときの代わり�
   （クリップは 0 秒〜全長、`postPlaybackState = Revert`）。再生中の Timeline のキャラだけが出る。
 - シーンに**最初から有効なキャラ**が残っていると全部に映り込む。書き出し用に複製したシーンで無効化して保存する。
 - `RecGameView.PlayFromStart` は他の Director を止め、ループを実行中だけ切る。
+- **出演者ごとの Timeline が並ぶシーン**（SinkaiFes2026 の Yamashita。使わない組の GameObject は無効）では
+  `RecGameView.PlaySolo("<Director 名>", <開始秒>)`。書き出しの Solo（ExportSolo）でその組の Director とキャラだけを Play 中に有効にし、
+  OptitrackSkeletonAnimator も止める（PlayFromStart の GameObject.Find は無効の Director を拾えない）。シーンは書き換えない。
 
 ## 3. OBS で録る（本線）
 
@@ -79,10 +85,14 @@ Unity Recorder での書き出しは、画面が使えないときの代わり�
    powershell -NoProfile -ExecutionPolicy Bypass -File "$G" pin <RecDisplay4 の窓> -7 -78 3856 2246
    ```
    - 窓のハンドルは win-gui `list_windows` のタイトル `RecDisplay4`（初回は `Game` のこともある）。
+     **一覧に出ないことがある**（2026-10-15、Win32 のタイトルが空だった）。そのときは EnumWindows で Unity の PID・タイトル空・
+     主画面いっぱいの窓を探す（GetWindowText・IsWindowVisible・GetWindowRect。.ps1 は ASCII だけで書く）。
    - 78 は 4K での実測（窓の上端 → 描画の開始）。-7 / 3856 は Windows の見えない枠の分。
    - **タスクバーを切り替えると窓が y=0 に戻される**。必ずタスクバーを先に、pin を後に。
    - 常に最前面の常駐窓（時計など）と Unity の `SettingsPrompt` は別モニタへ退避する（`gui.ps1 pin` → `unpin`）。
      元の位置を控えておき、終わったら戻す。
+     窓の位置がどのモニタにも入らない値（例: 時計 VTS が -1900,10）だと、主画面の下端中央に描かれて録画に映る（2026-10-15）。
+     副モニタの内側の座標へ明示して置き直す（`gui.ps1 pin <hwnd> -1900 850 268 138`）。`shot` で消えたか確かめる。
 5. Play に入る（`enter_play_mode` はドメインリロードで応答が切れる。`/mcp/tools/get_play_state` を 10 秒おきに見て待つ）。
 
 ### 3-2. OBS 側
@@ -93,6 +103,11 @@ python "$S/obs_rec.py" shot <scratch>/check.png
 python "$S/obs_rec.py" edges <scratch>/check.png   # 4K 1 画面のとき。NG ならツールバーかタスクバーが残っている
 ```
 - 初回は `--monitor-id` が要る（既存の `ClaudeRec_Monitor` 入力があれば引き継ぐ）。
+  利用者の既存の「画面キャプチャ」入力の monitor_id は、この PC では主画面（DISPLAY1）のものだった（2026-10-15 に EnumDisplayDevices で照合）。
+  前日にそれを渡して真っ白だったのは ID 違いではない（原因は未特定。Git Bash の引数で `\\?\` が化けた可能性 = 罠 15）。
+  **ID は Git Bash の引数で渡さず、Python から `subprocess.call([sys.executable, "<obs_rec.py>", "setup-4k", "--monitor-id", r"\\?\DISPLAY#..."])` で渡す**と通った。
+  主画面の ID は Win32 の `EnumDisplayDevices(<\\.\DISPLAYn>, 0, ref dd, 1)`（1 = EDD_GET_DEVICE_INTERFACE_NAME）の `DeviceID`（`\\?\DISPLAY#...#{e6f07b5f-...}`）。
+  .ps1 で書くなら BOM 付きか ASCII だけにする。`shot` が真っ白・真っ黒なら、まずモニタ違いを疑う。
   **OBS の `GetInputPropertiesListPropertyItems` でモニタ一覧を取らない**（OBS が固まって落ちた。罠 11）。
 - `shot` の PNG を**自分で開いて**、映るべきキャラだけが映っているか・画角・余計な窓が無いかを見る。
   `RecGameView.PlayFromStart` で一度流して、キャラが出た状態で見ること（Timeline 前は板しか映らない）。
@@ -158,6 +173,21 @@ rclone link  "dropbox:Claude/SinkaiFes2026/<同じ名前>"
 - 5 秒テストで `check.py` → 全尺。進み具合は `Recordings/` のファイルサイズで見る。
 - `Recordings/` はコミットに混ぜない。
 
+## B. 本番用を Timeline Exporter でまとめて書き出す（Batch・Solo）
+
+納品用の ProRes をまとめて書き出すときの、案件の書き出しシステム（サブモジュール `Script/Editor/Export/`、2026-10-14 に足した機能）。
+
+- プリセット: `Export/ExportPreset_<組>_D4_4K`・`_SW_FHD`（ProRes 422 HQ、範囲はモーションの尺）。ステージによって FHD だけ・録る Display が違う（SinkaiFes2026 の Prime は FHD・Display 3）。
+- Batch: `Export/ExportBatch_<名前>.asset`（Timeline とプリセットの組の一覧）を Timeline Exporter の Batch 欄に入れて Add → Check → Export。
+  Solo On のジョブは、その Timeline と、Animation トラックが指すキャラだけを Play 中に有効にし、他の組を無効にする（シーンは書き換えない。シーン上で無効の Director でもよい）。
+  点検: Solo なら無効の Director は Info、キューの外で有効なキャラ付きの Director は警告。
+- 容量の見積もり（点検に出る）: ProRes のデータレート（Apple の目標値 × 画素比 × fps 比）をドライブごとに合計し、5% の余裕込みで空きと比べる。足りなければ Error。
+  実測は 4K 225 MB/s・FHD 57 MB/s（4 組 8 本で約 1.2 TB）。
+- After Export: 別プロセスの FFmpeg で mp4 にして格納先へ（進捗の窓が出る。失敗なら理由を出して Enter 待ち）。FFmpeg が無ければ窓のボタンで %LOCALAPPDATA%\vortex\ffmpeg に入れる。
+  格納先が書き出し先と同じだと mp4 が消えていた（fd3fcfe6 で修正）。手元の mp4 は消さない（ユーザー指示）。
+- 書き出す前に、録る Display のカメラが有効か確かめる（Yamashita は Display 4 の Main Camera (1)・(3) と volume が無効で、D4 が真っ黒だった）。
+- 確認用の倍速再生は `Window/vortex/Timeline/Timeline Speed`（x1 / x1.5 / x2。Play と Edit のプレビュー。Exporter の実行中は触らない）。
+
 ## 踏んだ罠
 
 1. **`RT_Output` は誰も書かない**（2026-09-26）。`VirtualCameraSwitcher` の Blit がコメントアウトされていて、録ると黒い動画になる。
@@ -184,6 +214,27 @@ rclone link  "dropbox:Claude/SinkaiFes2026/<同じ名前>"
     `%APPDATA%\obs-studio\.sentinel\run_*` を消して起動し直す。
 12. 4K の画面録画では **GPU が 100% に張り付き、Unity の描画は実質 30fps 前後**になる（OBS の出力は 60fps のまま同じコマが 2 枚ずつ並ぶ）。
     確認用なら動きは追える。60fps が要るなら Recorder（手順 R）。
+13. **vortex_urp の番組出力 Display 3（Output-Canvas）も黒い**（2026-09-30）。罠 1 と同じく `RT_Output` に誰も書かない。
+    PGM の `RT_CameraA` に差し替えても、ライブ用ライトが DMX 無しでは消灯しているので影絵になる。
+    キャラの動きの確認なら、Play 中だけ空き Display（例 6）に正面の一時カメラ＋全 Rendering Layer の白色 Directional を置いて録る（ユーザー承認済みの形）。
+    カメラ距離はクリップの `RootT.x/z` の範囲（`AnimationUtility.GetEditorCurve`）から、全移動が 16:9 に収まるように式で決める。
+    キャラを並べるのは Timeline の AnimationTrack の `trackOffset=ApplyTransformOffsets` と `position`（シーンの配置は触らない）。
+    `OptitrackSkeletonAnimator` はポーズを上書きするので一時的に無効にし、終わったらシーンを保存せず開き直す。
+    - **ポストプロセスを掛ける**（ユーザー指摘 2026-09-30）: 一時カメラに `Camera_PGM` の Camera と UniversalAdditionalCameraData を
+      `EditorUtility.CopySerialized` で写す。ただし PGM 専用 Volume（レイヤー 24）の DoF は PGM の焦点のままなので全体がボケる。
+      VolumeLayerMask は Default だけにする（MCP の update_component では `{"m_VolumeLayerMask": {"value": 1}}`）。
+    - **寄り・角度の好み**（2026-09-30 Animax）: 1 人ずつなら「身長が画面の約 45%」（距離 = 1.65/0.45/2/tan(FoV/2)）。
+      角度はほぼ水平が好まれ、最終は高さ 0.4m から体の中心を見上げる形。傾きだけ変えても、見下ろし角は「高さ / 距離」で決まるので見た目はほとんど変わらない。
+      角度を詰めるときは、同じポーズ（Timeline 終了後の T ポーズ）のまま角度だけ変えた比較画像を出す。
+    - 1 人ずつ録るなら、キャラごとに Timeline と Director を作り、Play 中に他のキャラを `SetActive(false)` して順に録る（1 回の Play で済む）。
+    - **Unity が前面に無いと MCP が時間切れになる**（get_play_state まで）。MCP を呼ぶ直前に毎回 `focus_window` する。
+14. **録画中に別アプリの窓が前面へ出てくることがある**（2026-09-30、ftpDeck の Settings）。尺が短くても、収録中に 1 回 `obs_rec.py shot` で写りを確かめる。
+    `RecGameView.CloseAll` はタイトルが `Game` に戻った浮動 Game View を拾わないので、閉じ残しは「ドッキングしていない GameView」を閉じる。
+15. **`obs_rec.py setup-* --monitor-id` を Git Bash から渡すと `\\?\` が `\?\` に化けて画が真っ黒**（2026-09-30）。
+    `restore` はキャプチャ入力を消すので、次の setup で ID が要る。ID は OBS の既存の画面キャプチャ入力（GetInputSettings）か、
+    `EnumDisplayDevices(..., EDD_GET_DEVICE_INTERFACE_NAME)` で取り、Python から `SetInputSettings` で入れる。setup 後に shot の輝度が 0 でないかを見る。
+16. **OBS 録画が開始 1 秒で止まることがある**（`process_packet: Error writing packet: Invalid argument`、2026-09-30）。
+    `obs.py stop` が 501 を返したらこれ。OBS のログで確かめ、録り直せば通る。OBS に「録画エラー」ダイアログが残る。
 
 ## 報告に入れるもの
 

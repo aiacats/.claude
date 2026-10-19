@@ -23,6 +23,7 @@ import sys
 # Windows の既定コードページ(cp932)だと日本語が化けるので、出力を UTF-8 に固定する
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 HEADER = 16          # sequence(4) + time(8) + numUniverses(4)
 UNIVERSE_BLOCK = 516  # universe(4) + data(512)

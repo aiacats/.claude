@@ -1,6 +1,7 @@
 // 画面録画（OBS）用に、指定した Display を映す浮動 Game View を置く一時 Editor スクリプト。
 // vortex-timeline-export スキルの雛形。案件の Assets/_TempVerify/Editor/ へコピーして使い、録り終えたら削除する。
 // MCP の invoke_method から typeName="RecGameView" で呼ぶ。
+// 雛形の置き場はプロジェクトの外で、必ず Editor フォルダへ写して使う（trap-ok:cs-runtime-unityeditor trap-ok:cs-runtime-unityeditor-qualified）。
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
@@ -79,6 +80,45 @@ public static class RecGameView
         d.Evaluate();
         d.Play();
         return $"{directorName}: play from 0 (duration {d.duration:0.00}s)";
+    }
+
+    /// <summary>
+    /// 出演者ごとに Timeline を並べたシーン（SinkaiFes2026 の Yamashita など）で、directorName の Timeline とそのキャラだけを有効にし、
+    /// t0 秒から 1 回だけ再生する（Play 中に呼ぶ）。無効の GameObject の Director も拾う（PlayFromStart の GameObject.Find は拾えない）。
+    /// 切り替えは書き出しの Solo と同じ vortex.EditorTools.ExportSolo（サブモジュールの Export）。無い案件ではそう返す。
+    /// キャラの OptitrackSkeletonAnimator は受信が無いとポーズに触るので止める。Play を抜ければどれも元に戻る（シーンは書き換えない）。
+    /// </summary>
+    public static string PlaySolo(string directorName, double t0)
+    {
+        if (!Application.isPlaying) return "Play 中に呼ぶ";
+        var all = Object.FindObjectsByType<PlayableDirector>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        var d = all.FirstOrDefault(x => x.name == directorName);
+        if (d == null) return $"見つかりません: {directorName}";
+        var solo = System.AppDomain.CurrentDomain.GetAssemblies()
+            .Select(a => a.GetType("vortex.EditorTools.ExportSolo")).FirstOrDefault(t => t != null);
+        var apply = solo?.GetMethod("Apply", BindingFlags.Public | BindingFlags.Static);
+        if (apply == null) return "vortex.EditorTools.ExportSolo.Apply がありません（サブモジュールの Export が古い）";
+        solo.GetMethod("Forget", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, null);
+        var log = apply.Invoke(null, new object[] { d, all.Where(x => x != d).ToArray() });
+        foreach (var other in all) if (other != d) other.Stop();
+        int opti = 0;
+        foreach (var b in Object.FindObjectsByType<Behaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                     .Where(x => x.GetType().Name == "OptitrackSkeletonAnimator"))
+        {
+            b.enabled = false; opti++;
+        }
+        d.extrapolationMode = DirectorWrapMode.None;
+        d.time = t0;
+        d.Evaluate();
+        d.Play();
+        return $"{directorName}: play from {t0:0.00} (duration {d.duration:0.00}s), optitrack off {opti}, {log}";
+    }
+
+    /// <summary>directorName の今の時刻と再生状態（録画との時刻合わせに使う）。</summary>
+    public static string Now(string directorName)
+    {
+        var d = Object.FindObjectsByType<PlayableDirector>(FindObjectsInactive.Include, FindObjectsSortMode.None).FirstOrDefault(x => x.name == directorName);
+        return d == null ? $"見つかりません: {directorName}" : $"{d.time:0.000} {d.state}";
     }
 
     /// <summary>PlaceDisplay で作った浮動 Game View を閉じる。</summary>
