@@ -247,3 +247,12 @@
 - 実例: 2026-06-03 QLCMCP
 - 自動検出: 不可
 - 出典: QLCMCP:68-72, 97-98
+
+### 見えていないデスクトップに出たダイアログを座標で押すと、前面の別アプリを押す
+- 症状: Unity を仮想デスクトップ「SinkaiFes2026」で動かしている間に、表示が別のセッションのデスクトップへ戻され、Unity の「modified externally（Reload / Ignore）」がそちらに出ていない。ダイアログの座標の画面は、別のセッションの Unity だった。
+- 原因: ダイアログは親のウィンドウのデスクトップに出る。win-gui の座標クリックは、今見えているデスクトップの前面の窓へ届く。
+- 対策: Win32 のダイアログなら、ハンドルで子のボタンを探して BM_CLICK を送る（`powershell -File ~/.claude/tools/click-dialog-button.ps1 -Dialog <hwnd> -Button Reload`。hwnd は MemoryObserver の通知か win-gui の find_window）。
+  自分の Unity は全デスクトップに固定してサブモニターに置くと、他のセッションと画面を取り合わない（`VirtualDesktop11.exe /PinWindowHandle:<hwnd>`、SetWindowPos でサブモニターへ）。
+- 実例: 2026-10-19 SinkaiFes2026（Ext_TokinoSora の別セッションと同時に動かしていた）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-19

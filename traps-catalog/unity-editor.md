@@ -395,3 +395,14 @@ Editor 拡張・AssetDatabase・ドメインリロード・Editor の起動/終�
 
 ### Auto Refresh が無効のプロジェクトがある
 - skill vortex-timeline-setup に記載（vortex 案件。dll とソースの更新時刻を比べる）。実例 2026-09-24 SinkaiFes2026
+
+### 非同期のシェーダーコンパイルが On でも、Play 中に初めて使う組み合わせで止まる
+- 症状: Asynchronous Shader Compilation は On なのに、Timeline の再生中にときどき Shader Compile が走って止まる。
+- 原因: Blit で描くもの（URP の CoreBlit・UberPost、NiloToon の Uber Post、Crest の水中など）は非同期にならない（Unity マニュアル Asynchronous shader compilation）。`#pragma editor_sync_compilation` 付きのシェーダー（URP の CoreBlit・SSAO）も同じ。Recorder は録画中に非同期を切る。
+  コンパイル済みは Library/ShaderCache に残るので、止まるのは初めての組み合わせ・シェーダーやパッケージが変わった後・別の PC。
+- 対策: 使う組み合わせを ShaderVariantCollection に記録し（ShaderUtil の internal の記録 = Graphics 設定の Save to asset と同じ）、Play の開始時に WarmUp する Editor のフックを置く。
+  Editor の WarmUp は未コンパイルの組み合わせを先にコンパイルする（新しいキーワードのシェーダーで IsPassCompiled false → true、何もしないと false のまま。2026-10-19 実測）。
+  SinkaiFes2026（キャッシュを一時的に外した状態）: 先読み無し 止まり 2 回・最大 180 ms → 有り 0 回・最大 40 ms。キャッシュがあれば WarmUp は 0.3 秒。
+- 実例: 2026-10-19 SinkaiFes2026（Scripts/Editor/ShaderWarmupOnPlay.cs・Shaders/ShinkaiFes2026.shadervariants）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-19

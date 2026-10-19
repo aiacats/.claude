@@ -353,3 +353,11 @@ MonoBehaviour のライフサイクル・偽 null・スレッド・Input・UI To
 
 ---
 出典の略記: 2609-LOG = D:\_ProjectBLUE\Project\2609SuiseiTour26\log\claudeLog.txt / SINKAI-LOG = D:\_ProjectBLUE\Project\SinkaiFes2026\log\claudeLog.txt / VL = D:\_ProjectBLUE\Project\_vortex\vortex_urp\log\claudeLog.txt / MARQ-LOG = D:\_ProjectBLUE\Project\MARQ\MARQ-Studio\.claude\claudeLog.txt / MARQ-CAU = D:\_ProjectBLUE\Project\MARQ\MARQ-Studio\CLAUDE-UnityCaution.md / LMR-LOG = D:\_ProjectBLUE\Project\LiveMultiRecorder\.claude\claudeLog.txt / LMR-MEM = C:\Users\komao\.claude\projects\D---ProjectBLUE-Project-LiveMultiRecorder\memory / GACHA-MEM = C:\Users\komao\.claude\projects\D---ProjectBLUE-Project-PRBL-Gacha\memory / RL(RemoteLive) = D:\_ProjectBLUE\Project\_vortex\RemoteLive\log\claudeLog.txt / RL(ReLink) = D:\_Personal\Project\ReLink / AC・AL = D:\_ProjectBLUE\Project\_thirdParty\Unity_ArtNetRecorder の .claude\claudeLog.txt・log\claudeLog.txt / M:<name> = C:\Users\komao\.claude\projects\<name>\memory
+
+### 無効（非表示）のキャラに SkinnedMeshRenderer.BakeMesh を掛けると、骨の姿勢が反映されない
+- 症状: Edit モードで BakeMesh した頂点から口の位置を求めたら、無効のキャラ（Timeline で出すために非表示で置いてある）だけ 12〜14 cm 下・後ろにずれた。有効のキャラは 0.1〜1 cm。エラーは出ない。
+- 原因: 無効の SkinnedMeshRenderer は骨の行列を更新しないので、BakeMesh が今の骨の姿勢を反映しない（実測。ドキュメントには無い）。
+- 対策: 要る頂点だけ、`smr.bones[i].localToWorldMatrix * mesh.bindposes[i]` を boneWeights で重み付けして自分でスキニングする（有効・無効に関係なく今の骨の位置になる）。または一時的に有効にしてから焼く（シーンを変えるので避けた）。
+- 実例: 2026-10-19 SinkaiFes2026（vortex-character-setup の VortexCharMic.CreateMicMouth。きまゆ・Anjo・Kosaka が無効で 14 cm → 1.3 cm）
+- 自動検出: 不可
+- 出典: SinkaiFes2026 log/claudeLog.txt 2026-10-19
