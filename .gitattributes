@@ -1,0 +1,3 @@
+# .sh は LF で固定する（CRLF が混ざると途中の行が黙って飛ぶ。rules/traps/git.md）
+*.sh text eol=lf
+*.command text eol=lf
