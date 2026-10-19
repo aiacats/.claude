@@ -63,3 +63,6 @@ Editor 拡張のジョブが Play で始まらない、点検していないの�
 
 ### シーン YAML の日本語名は grep で当たらない
 `grep "みなとん" *.unity` が 0 件。原因は日本語名が `\uXXXX` で保存されること。→ MCP で引くか、`\u` 形式か ASCII 部分で grep。（実例: 2026-09-26）
+
+### 非同期のシェーダーコンパイルでも Play 中に止まる
+Timeline の途中でときどき Shader Compile が走って止まる。原因は Blit で描くポスト（URP の UberPost・NiloToon の Uber Post・Crest の水中）と `editor_sync_compilation` のシェーダーが同期でコンパイルされること。→ 使う組み合わせを ShaderVariantCollection に集め、Play の開始時に WarmUp する（skill vortex-project-setup 6.5）。（実例: 2026-10-19 SinkaiFes2026、止まり 2 回 → 0 回）
