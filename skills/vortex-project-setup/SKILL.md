@@ -1,6 +1,6 @@
 ---
 name: vortex-project-setup
-description: vortex 系ライブ案件（Submod_RealtimeLiveUtility を使う Unity URP プロジェクト。SinkaiFes2026・vortex_urp など）の Unity プロジェクトそのものを立ち上げる・設定を揃える・点検する。基準の案件の設定を JSON に写す（snapshot）・2 つの案件の設定の差を「揃える所 / 取り込み物しだい / 案件ごと」に分けて出す（compare）・基準が無くても分かる問題を出す（check: 空の Renderer Feature・存在しないビルドのシーン・版を固定していない git 参照・使われない define・file: 参照の先が無い・DX12 が先頭なのに AVPro・同名の asmdef・LFS でない大きいファイルなど）、Editor の API で Player Settings・レイヤー・Rendering Layer・Quality の RP アセットを当てる（ProjectSetupApply）、git（LFS の .gitattributes・.gitignore・サブモジュール）・パッケージ（manifest と版の固定）・取り込み物・URP アセットと Renderer・Unity MCP・プロジェクトの CLAUDE.md まで。「新しい案件の Unity プロジェクトを立ち上げて」「〇〇と同じ設定にして」「プロジェクト設定を揃えて」「パッケージを入れて」「設定が基準と違う所を出して」「プロジェクト設定を点検して」「ビルドのシェーダーコンパイルが終わらない」「AVPro が真っ黒」「git のパッケージの版を固定して」と言われたときに使う。シーンを作る・配線するのは vortex-live-scene-create、キャラを入れるのは vortex-character-setup。
+description: vortex 系ライブ案件（Submod_RealtimeLiveUtility を使う Unity URP プロジェクト。SinkaiFes2026・vortex_urp など）の Unity プロジェクトそのものを立ち上げる・設定を揃える・点検する。基準の案件の設定を JSON に写す（snapshot）・2 つの案件の設定の差を「揃える所 / 取り込み物しだい / 案件ごと」に分けて出す（compare）・基準が無くても分かる問題を出す（check: 空の Renderer Feature・Player のビルドだけ止まる Editor の型の使い方・存在しないビルドのシーン・版を固定していない git 参照・使われない define・file: 参照の先が無い・DX12 が先頭なのに AVPro・同名の asmdef・LFS でない大きいファイルなど）、Editor の API で Player Settings・レイヤー・Rendering Layer・Quality の RP アセットを当てる（ProjectSetupApply）、git（LFS の .gitattributes・.gitignore・サブモジュール）・パッケージ（manifest と版の固定）・取り込み物・URP アセットと Renderer・Unity MCP・プロジェクトの CLAUDE.md まで。「新しい案件の Unity プロジェクトを立ち上げて」「〇〇と同じ設定にして」「プロジェクト設定を揃えて」「パッケージを入れて」「設定が基準と違う所を出して」「プロジェクト設定を点検して」「ビルドのシェーダーコンパイルが終わらない」「AVPro が真っ黒」「git のパッケージの版を固定して」と言われたときに使う。シーンを作る・配線するのは vortex-live-scene-create、キャラを入れるのは vortex-character-setup。
 ---
 
 # vortex プロジェクトの立ち上げと設定
@@ -30,6 +30,12 @@ description: vortex 系ライブ案件（Submod_RealtimeLiveUtility を使う Un
 `invoke_method`（typeName `ProjectSetupApply`）で呼ぶ。終わったら `_TempVerify` ごと消す。
 
 ## 先に読む（踏んだ罠）
+
+- **Editor ではエラー 0 なのに、Player のビルドだけ CS0246 / CS0234 で止まる**
+  原因: Editor フォルダ・Editor 専用 asmdef の外の .cs が、#if UNITY_EDITOR の外で Editor の型（EditorWindow・CustomEditor・AssetDatabase・DefaultAsset など）を使っている。
+  `using UnityEditor;` だけなら通る（Crest などが Runtime に UnityEditor の名前空間を作っている。SinkaiFes2026 では 35 本あってもビルドは通った）。
+  → `check` の `editor-api-in-player`（定義の無いシンボルの #if の中・パッケージで asmdef に入らない .cs は見ない）。EditorWindow・CustomEditor は Editor フォルダへ .meta ごと移し、
+  MonoBehaviour の中なら使う所を #if UNITY_EDITOR で囲む。（SinkaiFes2026 02b9a5e7: Guiter の 2 本と ScreenShot_FS。CLAUDE.md に「落ちるはず」とだけあって未確認だった）
 
 - **起動中の Unity の ProjectSettings を文字で書き換えると、メモリ側の値で保存し直されて戻る**
   症状: EditorBuildSettings・PlayerSettings が戻る。原因: 読み込み済みのアセットはメモリ側が正。→ Unity が開いているなら `ProjectSetupApply`（Editor の API）で書く。
@@ -154,7 +160,7 @@ invoke_method ProjectSetupApply.Read []                                     # �
 2. `$S/templates/Editor/ShaderWarmupOnPlay.cs` を案件の `Scripts/Editor/` に置き、`CollectionPath` を 1 で作った物に書き換える（メニュー Window/vortex/Rendering/Shader Warmup On Play で切り替え）。
 3. 確かめる: キャッシュがある状態で `WarmUpTimed(<path>)` が 1 秒未満。効き目を見るなら、よく使うシェーダーに一時的に 1 行足してキャッシュを外し、`Sweep` の `stalls>100ms` を有り・無しで比べる（足した行は git checkout で戻す）。
    Editor の WarmUp が未コンパイルの組み合わせを先にコンパイルすることは `MechanismTest("warmup")`（対照は `"none"`）で確かめられる。
-- ビルドの Graphics 設定の Preloaded Shaders に入れるのは別の話（ロード時間が延びる）。ビルドで止まりを測ってから決める。
+- ビルドの Graphics 設定の Preloaded Shaders には、たぶん入れなくてよい。ビルドではシェーダーはコンパイル済みで、初めて使うときは GPU へ渡すだけ（SinkaiFes2026 2026-10-19 の Development ビルドで Log Shader Compilation を On: 再生中に渡したのは 205 個・計 43 ms、キャラ 1 体を初めて出すときで最大 4.6 ms。1 コマ 16.7 ms に届かない）。測り方: Graphics 設定の Log Shader Compilation を On にして Development ビルド → Player.log の「Uploaded shader variant to the GPU driver … time: N ms」を、起動中と再生中に分けて足す。終わったら Off に戻す（保存で ProjectSettings.asset に m_BuildTargetBatching の既定が書かれるので、git diff を見て戻す）。
 
 ### 7. Unity MCP・プロジェクトの CLAUDE.md
 

@@ -184,6 +184,23 @@ MonoBehaviour:
     w(root, "Unity/Assets/Scripts/UniversalRendererData.cs", "class UniversalRendererData {}\n")
     w(root, "Unity/Assets/Scripts/UniversalRendererData.cs.meta", meta(G["renderer_cs"]))
     w(root, "Unity/Assets/Scripts/Game.asmdef", json.dumps({"name": "Example.Game"}))
+    # UnityEditor を使ってよい所（出てはいけない）: #if UNITY_EDITOR で囲んだ物・#if !UNITY_EDITOR の #else 側・Editor フォルダ・Editor 専用の asmdef
+    w(root, "Unity/Assets/Scripts/Guarded.cs", "using UnityEngine;\n#if UNITY_EDITOR\nusing UnityEditor;\n#endif\n"
+      "class Guarded : MonoBehaviour {\n#if !UNITY_EDITOR\n  void A() {}\n#else\n  void A() { UnityEditor.EditorUtility.SetDirty(this); }\n#endif\n}\n")
+    w(root, "Unity/Assets/Scripts/Editor/Win.cs", "using UnityEditor;\nclass Win : EditorWindow {}\n")
+    # using UnityEditor; だけで型を使わない（Player でも通る）・文字列やコメントの中の名前（出てはいけない）
+    w(root, "Unity/Assets/Scripts/UsingOnly.cs", "using UnityEditor;\nusing UnityEditor.SceneManagement;\nusing UnityEngine;\n// EditorWindow AssetDatabase.Refresh()\n"
+      "class UsingOnly : MonoBehaviour { string s = \"needs UnityEditor AssetDatabase.\"; }\n")
+    # Crest と同じく、Runtime に UnityEditor の名前空間を作るだけのファイル（出てはいけない）
+    w(root, "Unity/Assets/Scripts/EditorNamespace.cs", "namespace UnityEditor.SceneManagement { }\n")
+    w(root, "Unity/Assets/Tools/EdTools.asmdef", json.dumps({"name": "Example.EdTools", "includePlatforms": ["Editor"]}))
+    w(root, "Unity/Assets/Tools/Deep/Tool.cs", "using UnityEditor;\nclass Tool : EditorWindow {}\n")
+    # 定義の無いシンボル 1 つの #if の中はコンパイルされない（出てはいけない）
+    w(root, "Unity/Assets/Scripts/Profiled.cs", "using UnityEngine;\nclass Profiled : MonoBehaviour { void A() {\n#if PROFILE_LOADING\n"
+      "  var t = UnityEditor.EditorApplication.timeSinceStartup;\n#endif\n} }\n")
+    # 先頭に BOM があるファイルを丸ごと #if UNITY_EDITOR で囲んだ物・パッケージの中で asmdef に入っていない物（どちらも出てはいけない）
+    w(root, "Unity/Assets/Scripts/BomGuarded.cs", "\ufeff#if UNITY_EDITOR\nusing UnityEditor;\nclass BomGuarded : EditorWindow {}\n#endif\n")
+    w(root, "Local/jp.example.local/Loose/LooseWindow.cs", "using UnityEditor;\nclass LooseWindow : EditorWindow {}\n")
     # AVPro Live Camera があっても D3D11 が先頭なら問題ない（avpro-dx12 が出てはいけない）
     w(root, "Unity/Assets/AVProLiveCamera/Runtime/AVProLiveCamera.cs", "class AVProLiveCamera {}\n")
     w(root, "Unity/Assets/Scenes/Main.unity", HEAD)
@@ -256,6 +273,13 @@ def make_broken(root):
     w(root, "Unity/Assets/Big/big.bin", b"\0" * (pa.GITHUB_WARN_BYTES + 1024 * 1024), binary=True)
     git(root, "add", "-A")
     git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "broken")
+    # 19 Runtime のフォルダに置いた EditorWindow（Player のビルドだけ止まる）
+    w(root, "Unity/Assets/Scripts/Runtime/SetupWindow.cs", "using UnityEditor;\nusing UnityEngine;\nclass SetupWindow : EditorWindow {}\n")
+    # 定義済みの define（BAR_USED）の #if の中は Player に入る → 出る（Holder と同じ扱い。数は Holder.cs と合わせて数える）
+    w(root, "Unity/Assets/Scripts/Runtime/Defined.cs", "using UnityEngine;\nclass Defined : MonoBehaviour { void A() {\n#if BAR_USED\n"
+      "  UnityEditor.AssetDatabase.Refresh();\n#endif\n} }\n")
+    # MonoBehaviour の中で、囲まずに Editor の型をフィールドに使う（ScreenShot_FS と同じ形）
+    w(root, "Unity/Assets/Scripts/Runtime/Holder.cs", "using UnityEngine;\nclass Holder : MonoBehaviour {\n  [SerializeField] UnityEditor.DefaultAsset folder;\n}\n")
     # 17 LFS のポインタのままの設定ファイル（コミットの後に置く。git には入れない）
     w(root, "Unity/ProjectSettings/TagManager.asset", "version https://git-lfs.github.com/spec/v1\noid sha256:00\nsize 1\n")
     # 18 100 MiB を超える追跡外のファイル（日本語名。-z で問わないと引用符付きで返り、LFS の物まで出す）。.png は LFS 指定あり → 出てはいけない
@@ -285,7 +309,7 @@ EXPECT_BROKEN = {
     "define-unused": "INFO", "asmdef-duplicate": "ERROR", "guid-duplicate": "WARN", "mcp-fixed-url": "WARN",
     "dll-editor-in-player": "WARN", "rp-missing": "ERROR", "gitignore-unanchored": "WARN", "sh-eol": "WARN",
     "large-in-git": "WARN", "unreadable": "ERROR", "renderer-mode-mixed": "WARN", "input-legacy-api": "WARN",
-    "large-untracked-not-lfs": "WARN",
+    "large-untracked-not-lfs": "WARN", "editor-api-in-player": "ERROR",
 }
 
 
@@ -349,6 +373,9 @@ def main():
             fails.append(f"同じ Renderer の空要素が {len(empty)} 回出た（RP アセット 2 つから使われていても 1 回）")
         if empty and "m_RendererFeatures[1]" not in empty[0]["message"]:
             fails.append("空要素の位置がずれた: " + empty[0]["message"])
+        ed = [i["message"] for i in f_b.items if i["code"] == "editor-api-in-player"]
+        if len(ed) != 1 or "3 本" not in ed[0] or not all(x in ed[0] for x in ("SetupWindow.cs:3", "Holder.cs:3", "Defined.cs:4")):
+            fails.append("Editor の外の Editor の型の対象がずれた（Runtime の SetupWindow.cs:3・Holder.cs:3・Defined.cs:4 のはず）: " + "; ".join(ed))
         big = [i["message"] for i in f_b.items if i["code"] == "large-untracked-not-lfs"]
         if len(big) != 1 or "大きい素材.bin" not in big[0]:
             fails.append("100 MiB 超の追跡外の対象がずれた（LFS 指定の無い 大きい素材.bin だけのはず）: " + "; ".join(big))
