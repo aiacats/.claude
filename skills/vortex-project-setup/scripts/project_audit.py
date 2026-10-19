@@ -28,6 +28,8 @@ import sys
 import time
 from pathlib import Path
 
+import editor_api
+
 for _s in (sys.stdout, sys.stderr):
     _s.reconfigure(encoding="utf-8")
 
@@ -82,93 +84,6 @@ URP_ASSET_KEYS = [
 URP_GLOBAL_KEYS = ["m_StripDebugVariants", "m_StripUnusedPostProcessingVariants", "m_StripUnusedVariants", "m_StripScreenCoordOverrideVariants"]
 DEFINE_SOURCE_EXT = (".cs", ".shader", ".hlsl", ".cginc", ".compute", ".asmdef", ".asmref", ".rsp")
 # 旧 Input の代表的な呼び出し（UnityEngine.Input のメンバー）。InputSystem の Keyboard.current などには当たらない
-# Editor にしか無い型・属性の使い方（`using UnityEditor;` だけなら Player でも通る。Crest などが Runtime に UnityEditor の名前空間を作っているため）
-EDITOR_API = re.compile(
-    r"\bEditorWindow\b|\bScriptableWizard\b|:\s*(?:UnityEditor\.)?Editor\b|\[\s*(?:UnityEditor\.)?(?:CustomEditor|MenuItem|InitializeOnLoad|InitializeOnLoadMethod|"
-    r"CustomPropertyDrawer|CanEditMultipleObjects|DidReloadScripts)\b|"
-    r"\b(?:AssetDatabase|EditorUtility|EditorGUILayout|EditorGUI|EditorGUIUtility|EditorApplication|EditorPrefs|EditorSceneManager|PrefabUtility|"
-    r"Undo|Handles|SceneView|EditorStyles|BuildPipeline|AssetImporter|ModelImporter|TextureImporter)\s*\.|"
-    r"\b(?:SerializedObject|SerializedProperty|DefaultAsset|PropertyDrawer|MonoScript)\b|"
-    r"\bUnityEditor\.\w")
-PP_LINE = re.compile(r"^\s*#\s*(if|elif|else|endif)\b(.*)$")
-STRING_LIT = re.compile(r'@"(?:""|[^"])*"|\$?"(?:\\.|[^"\\])*"')
-
-
-# Unity が場合によって定義するシンボルの頭（これで始まる 1 語の #if は、有効かもしれないので中も見る）
-BUILTIN_DEFINE_PREFIXES = ("UNITY_", "ENABLE_", "PLATFORM_", "NET_", "NETSTANDARD", "CSHARP_", "DEVELOPMENT_BUILD", "DEBUG", "TRACE", "CINEMACHINE", "USING_")
-
-
-def unguarded_editor_api(text, defines=()):
-    """#if UNITY_EDITOR（と !UNITY_EDITOR の #else 側）の外で、Editor にしか無い型を使っている最初の行番号。無ければ None。
-    using / namespace の行・コメント・文字列は見ない。条件の式は UNITY_EDITOR を含むかだけで見る（肯定で含めば囲まれているとみなす）。"""
-    defined = set(defines)
-    stack = []  # 各段: editor = その枝の中が Editor だけで有効か / off = その枝はコンパイルされない（定義の無いシンボル 1 つの #if）
-    in_block_comment = False
-    for no, raw in enumerate(text.lstrip("\ufeff").splitlines(), 1):  # 先頭の BOM があると 1 行目の #if を見落とす
-        line = raw
-        if in_block_comment:
-            if "*/" not in line:
-                continue
-            line = line.split("*/", 1)[1]
-            in_block_comment = False
-        line = re.sub(r"/\*.*?\*/", "", line)
-        if "/*" in line:
-            line, in_block_comment = line.split("/*", 1)[0], True
-        line = STRING_LIT.sub('""', line.split("//", 1)[0] if '"' not in line else line)
-        line = line.split("//", 1)[0]
-        m = PP_LINE.match(line)
-        if m:
-            kw, cond = m.group(1), m.group(2)
-            neg = bool(re.search(r"!\s*UNITY_EDITOR", cond))
-            pos = "UNITY_EDITOR" in cond and not neg
-            one = re.fullmatch(r"\s*\(?\s*([A-Za-z_]\w*)\s*\)?\s*", cond)
-            undefined = bool(one) and one.group(1) not in defined and not one.group(1).startswith(BUILTIN_DEFINE_PREFIXES)
-            if kw == "if":
-                stack.append({"editor": pos, "neg": neg, "off": undefined, "undef_if": undefined})
-            elif kw == "elif" and stack:
-                stack[-1]["editor"] = pos
-                stack[-1]["off"] = undefined
-            elif kw == "else" and stack:
-                stack[-1]["editor"] = stack[-1]["neg"]
-                stack[-1]["off"] = False  # 定義の無いシンボルの #if の #else 側はコンパイルされる
-            elif kw == "endif" and stack:
-                stack.pop()
-            continue
-        if re.match(r"\s*(?:using|namespace)\b", line):
-            continue
-        if EDITOR_API.search(line) and not any(f["editor"] or f["off"] for f in stack):
-            return no
-    return None
-
-
-def compile_target(path, cache):
-    """path の .cs がどこへコンパイルされるか。"editor" = Editor 専用の asmdef / "player" = Player にも入る / "none" = コンパイルされない
-    （パッケージの中で asmdef にも asmref にも入っていない .cs。Unity はパッケージの asmdef の外のスクリプトを読まない）。"""
-    for d in path.parents:
-        key = os.path.normcase(str(d))
-        if key in cache:
-            return cache[key]
-        if d.is_dir():
-            defs = list(d.glob("*.asmdef"))
-            if defs:
-                try:
-                    plats = json.loads(defs[0].read_text(encoding="utf-8-sig")).get("includePlatforms") or []
-                except (OSError, json.JSONDecodeError):
-                    plats = []
-                cache[key] = "editor" if plats == ["Editor"] else "player"
-                return cache[key]
-            if list(d.glob("*.asmref")):
-                cache[key] = "player"  # 参照先の asmdef までは追わない（Player にも入るとみなす）
-                return cache[key]
-        if (d / "package.json").exists():
-            cache[key] = "none"
-            return "none"
-        if d.name == "Assets":
-            cache[key] = "player"  # Assembly-CSharp
-            return "player"
-    return "player"
-
-
 LEGACY_INPUT = re.compile(r"(?<![\w.])(?:UnityEngine\.)?Input\.(?:GetKey|GetKeyDown|GetKeyUp|GetAxis|GetAxisRaw|GetButton|GetButtonDown|"
                           r"GetButtonUp|GetMouseButton|GetMouseButtonDown|GetMouseButtonUp|mousePosition|mouseScrollDelta|anyKey|"
                           r"anyKeyDown|inputString|touchCount|GetTouch)\b")
@@ -1140,27 +1055,45 @@ def check(path, scan=True):
                   ", ".join(proj.rel(p) for p in hits[:5]) + (" ほか" if len(hits) > 5 else ""),
                   "シーンで使う物なら Both（2）にするか Input System へ書き換える。デモ・サンプルなら使わない限り害は無い")
 
-    # Editor の外で UnityEditor を使う .cs は、Editor ではコンパイルが通り、Player のビルドだけ止まる（traps unity-build「Player ビルドを壊さない」）
+    # Editor の型を Player に入るファイルで使うと、Editor ではコンパイルが通り、Player のビルドだけ止まる（traps unity-build「Player ビルドを壊さない」）
     if scan:
-        bad, asm_cache = [], {}
+        asm = editor_api.AsmIndex(idx.asmdef_files)
+        unknown = asm.version_define_names()
+        pkg_roots = [d for k, _n, d in proj.package_dirs() if k != "cache"]
+        assets_root = proj.root / "Assets"
+        targets, cache, texts = [], {}, {}
         for k, p in idx.sources:
-            if k == "cache" or p.suffix.lower() != ".cs" or any(part.lower() == "editor" for part in p.parts):
+            if k == "cache" or p.suffix.lower() != ".cs":
+                continue
+            if k == "assets":
+                bound = assets_root
+            else:
+                bound = next((d for d in pkg_roots if os.path.normcase(str(p)).startswith(os.path.normcase(str(d)) + os.sep)), p.parent)
+            if editor_api.compile_target(p, k, bound, asm, cache) != "player":
                 continue
             try:
-                text = p.read_text(encoding="utf-8", errors="replace")
+                texts[p] = p.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            if "UnityEditor" not in text:  # Editor の型は using UnityEditor か UnityEditor. の修飾なしには書けない
+            targets.append(p)
+        extra, own = set(), set()
+        for p in targets:
+            if "namespace UnityEditor" in texts[p]:
+                extra |= editor_api.declared_namespaces(texts[p])
+            own |= editor_api.declared_types(texts[p])
+        bad = []
+        for p in targets:
+            if "UnityEditor" not in texts[p]:  # Editor の型は using UnityEditor か UnityEditor. の修飾なしには書けない
                 continue
-            line = unguarded_editor_api(text, pl["defines"].get("Standalone") or [])
-            if line is not None and compile_target(p, asm_cache) == "player":
-                bad.append((p, line))
+            hit = editor_api.scan(texts[p], pl["defines"].get("Standalone") or [], unknown, extra, own)
+            if hit:
+                bad.append((p, hit))
         if bad:
             f.add("ERROR", "editor-api-in-player",
-                  f"Editor フォルダ・Editor 専用の asmdef の外で、#if UNITY_EDITOR に囲まれずに Editor の型（EditorWindow・AssetDatabase など）を使うスクリプトが {len(bad)} 本"
+                  f"Player に入るスクリプトで、#if UNITY_EDITOR の外で Editor の API を使っているものが {len(bad)} 本"
                   "（Editor ではエラー 0 のまま、Player のビルドだけ CS0246 / CS0234 で止まる）: " +
-                  ", ".join(f"{proj.rel(p)}:{n}" for p, n in bad[:5]) + (" ほか" if len(bad) > 5 else ""),
-                  "EditorWindow・CustomEditor は Editor フォルダへ（.meta ごと移して GUID を保つ）。MonoBehaviour の中なら使う所を #if UNITY_EDITOR で囲む")
+                  ", ".join(f"{proj.rel(p)}:{n}（{why}）" for p, (n, why) in bad[:5]) + (" ほか" if len(bad) > 5 else ""),
+                  "EditorWindow・CustomEditor は Editor フォルダか Editor 専用の asmdef へ（.meta ごと移して GUID を保つ）。MonoBehaviour の中なら使う所を #if UNITY_EDITOR で囲む")
 
     # define
     defs = pl["defines"].get("Standalone") or []

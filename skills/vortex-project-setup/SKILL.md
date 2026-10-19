@@ -20,6 +20,7 @@ description: vortex 系ライブ案件（Submod_RealtimeLiveUtility を使う Un
 | `$S/scripts/project_audit.py snapshot <プロジェクト> -o <json>` | 設定の要点を JSON にする（Unity 不要）。パッケージ・Player・Editor・レイヤー・Quality・Graphics・URP アセットと Renderer の Feature・ビルドのシーン・`.cs.meta` の実行順・git（LFS・ignore・サブモジュール）・Unity MCP |
 | `$S/scripts/project_audit.py compare <A> <B>` | 2 つ（プロジェクトか snapshot の json）を比べ、「vortex で揃える所 / 取り込み物しだい / 案件ごと」に分けて出す。`--json` もある |
 | `$S/scripts/project_audit.py check <プロジェクト>` | 基準が無くても分かる問題を ERROR / WARN / INFO で出す。ERROR があれば終了コード 1。`--no-scan` でファイル全体を読む点検を飛ばす |
+| `$S/scripts/editor_api.py` | check の editor-api-in-player の中身（.cs の行き先・#if の 3 値評価・Editor の API の使い方）。`scan(<ソース>)` を単体でも呼べる |
 | `$S/scripts/test_project_audit.py` | 上の確かめ（一時フォルダに問題の無い案件と問題を入れた案件を作って流す）。スクリプトを直したら流す |
 | `$S/templates/Editor/ProjectSetupApply.cs` | Unity 側。`Read` / `Plan(json, sections)` / `Apply(json, sections)` と個別の `Set*`、`RemoveEmptyRendererFeatures`。前後の値を JSON で返す。使い方は先頭のコメント |
 | `$S/templates/Editor/ShaderVariantTools.cs`・`ShaderWarmupOnPlay.cs` | シェーダーの先読み（使う組み合わせを集める・Play に入ったら WarmUp）。手順 6.5 |
@@ -32,10 +33,13 @@ description: vortex 系ライブ案件（Submod_RealtimeLiveUtility を使う Un
 ## 先に読む（踏んだ罠）
 
 - **Editor ではエラー 0 なのに、Player のビルドだけ CS0246 / CS0234 で止まる**
-  原因: Editor フォルダ・Editor 専用 asmdef の外の .cs が、#if UNITY_EDITOR の外で Editor の型（EditorWindow・CustomEditor・AssetDatabase・DefaultAsset など）を使っている。
-  `using UnityEditor;` だけなら通る（Crest などが Runtime に UnityEditor の名前空間を作っている。SinkaiFes2026 では 35 本あってもビルドは通った）。
-  → `check` の `editor-api-in-player`（定義の無いシンボルの #if の中・パッケージで asmdef に入らない .cs は見ない）。EditorWindow・CustomEditor は Editor フォルダへ .meta ごと移し、
+  原因: Player に入る .cs が、#if UNITY_EDITOR の外で Editor の型（EditorWindow・CustomEditor・AssetDatabase・DefaultAsset など）や、Player に無い名前空間の using（UnityEditorInternal・UnityEditor.SceneManagement）を使っている。
+  `using UnityEditor;` だけなら通る（UnityEngine.dll に UnityEditor.Experimental / Analytics の型があり、親の名前空間ができる。SinkaiFes2026 では 35 本あってもビルドは通った）。
+  Player に入るかは asmdef が決める: asmdef（asmref）の下なら、その中の Editor フォルダは特別扱いされない。asmdef の無い Assets だけ Editor フォルダの規則。パッケージで asmdef の無い .cs は読まれない。
+  → `check` の `editor-api-in-player`（中身は `scripts/editor_api.py`。#if を 3 値で評価: UNITY_EDITOR は偽・案件の define は真・Unity のシンボルと versionDefines は不明で中も見る・
+  定義の無いシンボルは偽。コメントと文字列の中は見ない。案件が自分で宣言した同じ名前の型は除く）。EditorWindow・CustomEditor は Editor フォルダか Editor 専用 asmdef へ .meta ごと移し、
   MonoBehaviour の中なら使う所を #if UNITY_EDITOR で囲む。（SinkaiFes2026 02b9a5e7: Guiter の 2 本と ScreenShot_FS。CLAUDE.md に「落ちるはず」とだけあって未確認だった）
+  Player に有る UnityEditor の名前空間の一覧（editor_api.PLAYER_EDITOR_NAMESPACES）は Unity 6000.3.5f2 で調べた物。版を上げたら、Player の Assembly-CSharp.rsp の -r: の DLL を走査し直す。
 
 - **起動中の Unity の ProjectSettings を文字で書き換えると、メモリ側の値で保存し直されて戻る**
   症状: EditorBuildSettings・PlayerSettings が戻る。原因: 読み込み済みのアセットはメモリ側が正。→ Unity が開いているなら `ProjectSetupApply`（Editor の API）で書く。

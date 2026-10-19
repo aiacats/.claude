@@ -4,6 +4,7 @@
           同じ所に「出てはいけない」物（版を固定した git 参照・使われている define など）も混ぜて、出ないことも確かめる
 使い方: python test_project_audit.py [--keep]   （--keep で一時フォルダを残す）"""
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,7 @@ for _s in (sys.stdout, sys.stderr):
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import editor_api as ea  # noqa: E402
 import project_audit as pa  # noqa: E402
 
 HEAD = "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n"
@@ -187,7 +189,8 @@ MonoBehaviour:
     # UnityEditor を使ってよい所（出てはいけない）: #if UNITY_EDITOR で囲んだ物・#if !UNITY_EDITOR の #else 側・Editor フォルダ・Editor 専用の asmdef
     w(root, "Unity/Assets/Scripts/Guarded.cs", "using UnityEngine;\n#if UNITY_EDITOR\nusing UnityEditor;\n#endif\n"
       "class Guarded : MonoBehaviour {\n#if !UNITY_EDITOR\n  void A() {}\n#else\n  void A() { UnityEditor.EditorUtility.SetDirty(this); }\n#endif\n}\n")
-    w(root, "Unity/Assets/Scripts/Editor/Win.cs", "using UnityEditor;\nclass Win : EditorWindow {}\n")
+    # asmdef の無い所の Editor フォルダ（Assets/Scripts は Game.asmdef の下なので、そこの Editor フォルダは Player に入る）
+    w(root, "Unity/Assets/Misc/Editor/Win.cs", "using UnityEditor;\nclass Win : EditorWindow {}\n")
     # using UnityEditor; だけで型を使わない（Player でも通る）・文字列やコメントの中の名前（出てはいけない）
     w(root, "Unity/Assets/Scripts/UsingOnly.cs", "using UnityEditor;\nusing UnityEditor.SceneManagement;\nusing UnityEngine;\n// EditorWindow AssetDatabase.Refresh()\n"
       "class UsingOnly : MonoBehaviour { string s = \"needs UnityEditor AssetDatabase.\"; }\n")
@@ -201,6 +204,11 @@ MonoBehaviour:
     # 先頭に BOM があるファイルを丸ごと #if UNITY_EDITOR で囲んだ物・パッケージの中で asmdef に入っていない物（どちらも出てはいけない）
     w(root, "Unity/Assets/Scripts/BomGuarded.cs", "\ufeff#if UNITY_EDITOR\nusing UnityEditor;\nclass BomGuarded : EditorWindow {}\n#endif\n")
     w(root, "Local/jp.example.local/Loose/LooseWindow.cs", "using UnityEditor;\nclass LooseWindow : EditorWindow {}\n")
+    # Editor 専用の asmdef を指す asmref・defineConstraints が UNITY_EDITOR の asmdef（どちらも Player に入らない → 出てはいけない）
+    w(root, "Unity/Assets/Tools2/Ref.asmref", json.dumps({"reference": "Example.EdTools"}))
+    w(root, "Unity/Assets/Tools2/Tool2.cs", "using UnityEditor;\nclass Tool2 : EditorWindow {}\n")
+    w(root, "Unity/Assets/Tools3/T3.asmdef", json.dumps({"name": "Example.T3", "defineConstraints": ["UNITY_EDITOR"]}))
+    w(root, "Unity/Assets/Tools3/Tool3.cs", "using UnityEditor;\nclass Tool3 : EditorWindow {}\n")
     # AVPro Live Camera があっても D3D11 が先頭なら問題ない（avpro-dx12 が出てはいけない）
     w(root, "Unity/Assets/AVProLiveCamera/Runtime/AVProLiveCamera.cs", "class AVProLiveCamera {}\n")
     w(root, "Unity/Assets/Scenes/Main.unity", HEAD)
@@ -280,6 +288,12 @@ def make_broken(root):
       "  UnityEditor.AssetDatabase.Refresh();\n#endif\n} }\n")
     # MonoBehaviour の中で、囲まずに Editor の型をフィールドに使う（ScreenShot_FS と同じ形）
     w(root, "Unity/Assets/Scripts/Runtime/Holder.cs", "using UnityEngine;\nclass Holder : MonoBehaviour {\n  [SerializeField] UnityEditor.DefaultAsset folder;\n}\n")
+    # Player の asmdef の下の Editor フォルダは特別扱いされない（asmdef が勝つ）→ 出る
+    w(root, "Unity/Assets/Lib/Lib.asmdef", json.dumps({"name": "Example.Lib"}))
+    w(root, "Unity/Assets/Lib/Editor/LibWin.cs", "using UnityEditor;\nclass LibWin : EditorWindow {}\n")
+    # Assets の中の package.json はパッケージではない（Assembly-CSharp に入る）→ 出る
+    w(root, "Unity/Assets/Plugins/Pkg/package.json", json.dumps({"name": "com.example.inassets", "version": "1.0.0"}))
+    w(root, "Unity/Assets/Plugins/Pkg/Runtime/PkgUse.cs", "class PkgUse { void A() { UnityEditor.AssetDatabase.Refresh(); } }\n")
     # 17 LFS のポインタのままの設定ファイル（コミットの後に置く。git には入れない）
     w(root, "Unity/ProjectSettings/TagManager.asset", "version https://git-lfs.github.com/spec/v1\noid sha256:00\nsize 1\n")
     # 18 100 MiB を超える追跡外のファイル（日本語名。-z で問わないと引用符付きで返り、LFS の物まで出す）。.png は LFS 指定あり → 出てはいけない
@@ -313,10 +327,57 @@ EXPECT_BROKEN = {
 }
 
 
+# editor_api.scan の枝ごとの例: (名前, ソース, 案件の define, 不明のシンボル, ソースで宣言した名前空間, 期待する行（None = 出ない）)
+U = "using UnityEditor;\n"
+SCAN_CASES = [
+    ("using だけ", U + "class A {}\n", (), (), (), None),
+    ("UnityEditorInternal の using", "using UnityEditorInternal;\nclass A {}\n", (), (), (), 1),
+    ("Player に無い名前空間の using", "using UnityEditor.SceneManagement;\n", (), (), (), 1),
+    ("ソースで宣言した名前空間の using", "using UnityEditor.SceneManagement;\n", (), (), ("UnityEditor.SceneManagement",), None),
+    ("using static", "using static UnityEditor.EditorGUILayout;\n", (), (), (), 1),
+    ("using static（Player に型がある名前空間）", "using static UnityEditor.Experimental.Foo;\n", (), (), (), None),
+    ("前の枝が真なら #elif は入らない", U + "#if FOO\nint a;\n#elif BAR\nAssetDatabase.Refresh();\n#endif\n", ("FOO", "BAR"), (), (), None),
+    ("using の別名", "using EU = UnityEditor.EditorUtility;\n", (), (), (), 1),
+    ("UNITY_EDITOR || DEVELOPMENT_BUILD は Development ビルドで入る", U + "#if UNITY_EDITOR || DEVELOPMENT_BUILD\nvar p = AssetDatabase.GetAssetPath(o);\n#endif\n", (), (), (), 3),
+    ("UNITY_EDITOR && X は入らない", U + "#if UNITY_EDITOR && DEVELOPMENT_BUILD\nvar p = AssetDatabase.GetAssetPath(o);\n#endif\n", (), (), (), None),
+    ("!UNITY_EDITOR の #else", U + "#if !UNITY_EDITOR\nint a;\n#else\nvar p = AssetDatabase.GetAssetPath(o);\n#endif\n", (), (), (), None),
+    ("!UNITY_EDITOR の #elif（定義の無いシンボル）", U + "#if !UNITY_EDITOR\nint a;\n#elif FOO\nAssetDatabase.Refresh();\n#endif\n", (), (), (), None),
+    ("UNITY_EDITOR の #elif（案件の define）", U + "#if UNITY_EDITOR\nint a;\n#elif FOO\nAssetDatabase.Refresh();\n#endif\n", ("FOO",), (), (), 5),
+    ("UNITY_EDITOR の #else", U + "#if UNITY_EDITOR\nint a;\n#else\nAssetDatabase.Refresh();\n#endif\n", (), (), (), 5),
+    ("入れ子", U + "#if UNITY_EDITOR\n#if FOO\n#else\nAssetDatabase.Refresh();\n#endif\n#endif\n", ("FOO",), (), (), None),
+    ("UNITY_EDITOR_WIN", U + "#if UNITY_EDITOR_WIN\nAssetDatabase.Refresh();\n#endif\n", (), (), (), None),
+    ("versionDefines（不明）", U + "#if USE_X\nAssetDatabase.Refresh();\n#endif\n", (), ("USE_X",), (), 3),
+    ("定義の無いシンボル", U + "#if PROFILE_X\nAssetDatabase.Refresh();\n#endif\n", (), (), (), None),
+    ("ファイルの #define", "#define FOO\n" + U + "#if FOO\nAssetDatabase.Refresh();\n#endif\n", (), (), (), 4),
+    ("文字列の中の /*", U + "string s = \"Assets/*.prefab\";\nclass W : EditorWindow {}\n", (), (), (), 3),
+    ("複数行の逐語的文字列", U + "string s = @\"a\nAssetDatabase.Refresh();\nb\";\nint x;\n", (), (), (), None),
+    ("$\"{…}\" の中", U + "var s = $\"{AssetDatabase.GetAssetPath(o)}\";\n", (), (), (), 2),
+    ("複数行のブロックコメント", U + "/* EditorWindow\nAssetDatabase.Refresh();\n*/ int x;\n", (), (), (), None),
+    ("case の : Editor", U + "switch (a) { case 1: Editor = 2; break; }\n", (), (), (), None),
+    ("class X : Editor", U + "class X : Editor {}\n", (), (), (), 2),
+    ("修飾した型", "class H { UnityEditor.DefaultAsset f; }\n", (), (), (), 1),
+    ("Experimental の型", "class H { UnityEditor.Experimental.Foo f; }\n", (), (), (), None),
+    ("BOM と #if UNITY_EDITOR", "\ufeff#if UNITY_EDITOR\n" + U + "class W : EditorWindow {}\n#endif\n", (), (), (), None),
+    ("using が無ければ同じ名前の自前の型は見ない", "class Selection { } class B { void A() { Selection.x = 1; } }\n", (), (), (), None),
+    ("同じファイルで宣言した同じ名前の型", U + "abstract class ScriptableSingleton<T> {}\nclass S : ScriptableSingleton<int> {}\n", (), (), (), None),
+]
+
+
+def scan_unit():
+    fails = []
+    for name, src, defines, unknown, extra, want in SCAN_CASES:
+        hit = ea.scan(src, defines, unknown, extra)  # own_types は declared_types でファイルの中から足される
+        got = hit[0] if hit else None
+        if got != want:
+            fails.append(f"scan「{name}」: 期待 {want} / 実際 {got}（{hit}）")
+    return fails
+
+
 def main():
     keep = "--keep" in sys.argv
     tmp = Path(tempfile.mkdtemp(prefix="project_audit_test_"))
-    fails = []
+    fails = scan_unit()
+    print(f"scan: {len(SCAN_CASES)} 例" + (f"、外れ {len(fails)}" if fails else "、全部合う"))
     try:
         clean = tmp / "clean"
         make_clean(clean)
@@ -374,8 +435,11 @@ def main():
         if empty and "m_RendererFeatures[1]" not in empty[0]["message"]:
             fails.append("空要素の位置がずれた: " + empty[0]["message"])
         ed = [i["message"] for i in f_b.items if i["code"] == "editor-api-in-player"]
-        if len(ed) != 1 or "3 本" not in ed[0] or not all(x in ed[0] for x in ("SetupWindow.cs:3", "Holder.cs:3", "Defined.cs:4")):
-            fails.append("Editor の外の Editor の型の対象がずれた（Runtime の SetupWindow.cs:3・Holder.cs:3・Defined.cs:4 のはず）: " + "; ".join(ed))
+        want = {("SetupWindow.cs", "3"), ("Holder.cs", "3"), ("Defined.cs", "4"), ("LibWin.cs", "2"), ("PkgUse.cs", "1")}
+        got_n = re.search(r"(\d+) 本", ed[0]).group(1) if len(ed) == 1 and re.search(r"(\d+) 本", ed[0]) else None
+        got_files = set(re.findall(r"([\w.]+\.cs):(\d+)", ed[0])) if len(ed) == 1 else set()
+        if got_n != str(len(want)) or got_files != want:
+            fails.append(f"editor-api-in-player の対象がずれた（{len(want)} 本: {sorted(want)} のはず）: 件数 {got_n} / {sorted(got_files)}")
         big = [i["message"] for i in f_b.items if i["code"] == "large-untracked-not-lfs"]
         if len(big) != 1 or "大きい素材.bin" not in big[0]:
             fails.append("100 MiB 超の追跡外の対象がずれた（LFS 指定の無い 大きい素材.bin だけのはず）: " + "; ".join(big))
