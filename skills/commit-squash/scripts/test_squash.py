@@ -77,12 +77,74 @@ def main():
         assert git("rev-parse", "HEAD^{tree}", cwd=work) == head_tree
         assert git("rev-parse", f"{new[0]}^{{tree}}", cwd=work) == mid_tree
         assert git("log", "-1", "--format=%s", new[0], cwd=work) == "A"
+        # Windows でもメッセージの行末に \r が入らない（text モードのパイプで \n が \r\n に化けていた）
+        for c in new:
+            raw = subprocess.run(["git", "cat-file", "commit", c], cwd=work, capture_output=True).stdout
+            assert b"\r" not in raw, raw
         assert os.path.exists(os.path.join(work, "dirty.txt")), "未コミットのファイルが消えた"
 
         # undo でタグへ戻る
         run(sys.executable, SQUASH, "undo", tag, "--repo", work, cwd=work)
         assert git("rev-parse", "HEAD", cwd=work) == commits[-1]
-        print("all tests passed")
+
+    test_gitlinks()
+    print("all tests passed")
+
+
+def test_gitlinks():
+    """サブモジュールのコミットを作り直した（旧 s1 → 新 s1n）とき、gitlinks で途中のコミットの参照を付け替え、名前が壊れないこと。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        remote = os.path.join(tmp, "remote.git")
+        work = os.path.join(tmp, "work")
+        run("git", "init", "--bare", "-q", remote, cwd=tmp)
+        run("git", "clone", "-q", remote, work, cwd=tmp)
+        for cwd in (work,):
+            git("config", "user.name", "t", cwd=cwd)
+            git("config", "user.email", "t@example.com", cwd=cwd)
+        sub = os.path.join(work, "sub")
+        os.makedirs(sub)
+        git("init", "-q", cwd=sub)
+        git("config", "user.name", "t", cwd=sub)
+        git("config", "user.email", "t@example.com", cwd=sub)
+        with open(os.path.join(sub, "s.txt"), "w") as f:
+            f.write("s\n")
+        git("add", ".", cwd=sub)
+        git("commit", "-qm", "s0", cwd=sub)
+        s0 = git("rev-parse", "HEAD", cwd=sub)
+        with open(os.path.join(sub, "s.txt"), "a") as f:
+            f.write("1\n")
+        git("commit", "-qam", "s1", cwd=sub)
+        s1 = git("rev-parse", "HEAD", cwd=sub)
+        s1n = git("commit-tree", f"{s1}^{{tree}}", "-p", s0, "-m", "s1 new", cwd=sub)
+        with open(os.path.join(work, ".gitmodules"), "w") as f:
+            f.write('[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n')
+        with open(os.path.join(work, "a.txt"), "w") as f:
+            f.write("0\n")
+        git("add", ".gitmodules", "a.txt", cwd=work)
+        git("update-index", "--add", "--cacheinfo", f"160000,{s0},sub", cwd=work)
+        git("commit", "-qm", "base", cwd=work)
+        git("push", "-q", "-u", "origin", "HEAD", cwd=work)
+        git("update-index", "--cacheinfo", f"160000,{s1},sub", cwd=work)
+        git("commit", "-qm", "point s1", cwd=work)
+        with open(os.path.join(work, "a.txt"), "a") as f:
+            f.write("1\n")
+        git("add", "a.txt", cwd=work)
+        git("commit", "-qm", "edit a", cwd=work)
+        git("update-index", "--cacheinfo", f"160000,{s1n},sub", cwd=work)
+        git("commit", "-qm", "point s1n", cwd=work)
+        commits = git("rev-list", "--reverse", "@{u}..HEAD", cwd=work).split()
+        path = os.path.join(work, ".git", "pg.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"gitlinks": {s1[:8]: s1n[:8]},
+                       "groups": [{"commits": [commits[0]], "message": "point"}, {"commits": [commits[1]], "message": "edit"},
+                                  {"commits": [commits[2]], "message": "last"}]}, f)
+        run(sys.executable, SQUASH, "apply", path, "--repo", work, cwd=work)
+        new = git("rev-list", "--reverse", "@{u}..HEAD", cwd=work).split()
+        for c in new:
+            assert git("ls-tree", c, "sub", cwd=work).split()[2] == s1n, "旧ハッシュが残った"
+            names = subprocess.run(["git", "ls-tree", "-r", "--name-only", c], cwd=work, capture_output=True).stdout
+            assert b"\r" not in names, names
+        assert git("diff", "--name-only", commits[1], new[1], cwd=work) == "sub"
 
 
 if __name__ == "__main__":

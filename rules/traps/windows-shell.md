@@ -31,3 +31,9 @@ ASCII は通るのに日本語の値だけサーバに弾かれ、サーバの�
 
 ### UAC の同意は自分で押せない
 `Start-Process -Verb RunAs` の同意画面はセキュアデスクトップに出るため win-gui で操作できず、MSI の無人インストールは 1603 で落ちる。→ ポータブル版 zip の展開、`winget --scope user`、`msiexec /a`、HKCU への設定を先に探す。（実例: 2026-09-24 BMCP）
+
+### PowerShell の出力を bash で受けると末尾に `\r` が付く
+`powershell ... | while read p; do taskkill /PID $p` が黙って失敗し、プロセスが残る。原因は CRLF の `\r` が値に残ること。→ `| tr -d '\r'` を挟み、止めたら消えたことを確かめる。（実例: 2026-10-07 BMCP）
+
+### Python の subprocess に text=True で標準入力を渡すと `\n` が `\r\n` になる
+`git mktree` の名前・`commit-tree` のメッセージの行末に `\r` が付き、黙って壊れたオブジェクトができる。原因は text モードの stdin が改行を os.linesep へ変えること。→ 標準入力はバイト列（`input=s.encode()`）で渡し、作ったものをバイトで確かめる。（実例: 2026-10-26 commit-squash）
