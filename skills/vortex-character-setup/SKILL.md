@@ -183,7 +183,7 @@ Play 中のまま:
    - 撮り直し・2 体目では、keep_front_until.ps1 が前回の表のファイルを見て即「done」になる。`IsCapturing()` が False になるまで待つ。
    - 表の枠はキャラのルートの vortex_FacialController か FacialManager から読む。どちらも無いキャラ（例: Pia のリオナ）は、
      割り当てを付けた FacialManager を Play 中に足して `enabled=false`（Start を走らせない）にすれば撮れる。
-     ルートに Animator が無いモデルは StartFacialCapture の `GetComponent<Animator>()` が NRE なので子から取る。
+     ルートに Animator が無いモデル（Ext_TokinoSora_2026-pia のそら・リオナ）は、StartFacialCapture・BuildTimelines が子の Humanoid の Animator を探す（2026-10-26 に直した。以前は MissingComponentException）。
      無表情のクリップ名が Neutral でない（Default など）と全枠に載るので、無表情は十字キー下だけに入れる（2026-10-19 Ext_TokinoSora_2026-pia）。
 
 ## 7. 納品（Dropbox）

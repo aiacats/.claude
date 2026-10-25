@@ -30,6 +30,16 @@ public static class VortexCharCapture
         AssetDatabase.LoadAllAssetsAtPath(clipFbxPath).OfType<AnimationClip>()
             .First(c => !c.name.StartsWith("__preview", StringComparison.Ordinal));
 
+    // ルートに Animator が無いモデル（子に Humanoid の Animator を持つ。Ext_TokinoSora_2026-pia のそら・リオナ）もあるので、
+    // ルート → 子の順に Humanoid の Animator を探す
+    private static Animator HumanoidAnimator(GameObject chara)
+    {
+        if (chara.TryGetComponent<Animator>(out var root) && root.isHuman) return root;
+        var child = chara.GetComponentsInChildren<Animator>(true).FirstOrDefault(a => a.isHuman);
+        if (child == null) throw new InvalidOperationException($"{chara.name}: Humanoid の Animator が見つからない");
+        return child;
+    }
+
     // ---- Timeline ----
 
     /// <summary>
@@ -71,7 +81,7 @@ public static class VortexCharCapture
             anim.trackOffset = TrackOffset.ApplyTransformOffsets;
             anim.position = new Vector3(x, 0f, 0f);
             anim.rotation = Quaternion.identity;
-            d.SetGenericBinding(anim, c.GetComponent<Animator>());
+            d.SetGenericBinding(anim, HumanoidAnimator(c));
         }
 
         for (int i = 0; i < chars.Count; i++)
@@ -232,7 +242,7 @@ public static class VortexCharCapture
             for (int i = 0; i < chars.Count; i++) chars[i].SetActive(i == index);
             var chara = chars[index];
             var root = chara.transform;
-            var head = chara.GetComponent<Animator>().GetBoneTransform(HumanBodyBones.Head);
+            var head = HumanoidAnimator(chara).GetBoneTransform(HumanBodyBones.Head);
             // 顔の中心は頭のボーン(首の付け根寄り)より上。0.08m は頭の高さ 0.2m 強の約 1/3
             var faceCenter = head.position + root.up * 0.08f;
 
